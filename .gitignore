@@ -1,0 +1,109 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+*.egg-info/
+dist/
+build/
+*.egg
+*.eggs/
+parts/
+sdist/
+var/
+wheels/
+*.manifest
+*.spec
+pip-wheel-metadata/
+share/python-wheels/
+*.installed.cfg
+*.egg-link
+
+# Virtual environments
+venv/
+myenv/
+env/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Poetry / Pipenv
+.poetry/
+Pipfile.lock
+poetry.lock
+
+# Testing & coverage
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+*.coverage.*
+coverage/
+.tox/
+.nox/
+.cache/
+.pytest_cache/
+pytestdebug.log
+.ruff_cache/
+.mypy_cache/
+.dmypy.json
+.dmypy/
+
+# IDEs & editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+*.sublime-*
+*.code-workspace
+*.sublime-project
+*.sublime-workspace
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+__MACOSX/
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Logs & databases
+*.log
+*.sql
+*.sqlite
+*.sqlite3
+*.db
+
+# Dependency directories (if you ever commit them by mistake)
+node_modules/
+bower_components/
+
+# Environment variables & secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Docker
+docker-compose.override.yml
+*.dockerignore
+
+# FastAPI / common project files you usually don't want to commit
+*.bak
+*.tmp
+*.temp
+temp/
+tmp/

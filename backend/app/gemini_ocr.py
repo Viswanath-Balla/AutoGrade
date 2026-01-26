@@ -1,0 +1,1 @@
+# This file will contain the gemini API for text extraction from the images
