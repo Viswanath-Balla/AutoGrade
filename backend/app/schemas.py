@@ -1,1 +1,0 @@
-# This file will contain the request and response schema

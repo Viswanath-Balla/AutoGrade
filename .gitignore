@@ -107,3 +107,5 @@ docker-compose.override.yml
 *.temp
 temp/
 tmp/
+
+alembic/__pycache__/

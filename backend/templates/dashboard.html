@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard</title>
+</head>
+<body>
+
+<h2>Welcome {{username}} 🎉</h2>
+
+<p>You are logged in.</p>
+
+<button onclick="logout()">Logout</button>
+
+<script>
+
+function logout(){
+    localStorage.removeItem("token");
+    window.location.href = "/login";
+
+}
+
+</script>
+
+</body>
+</html>
