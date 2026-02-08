@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Evaluate</title>
+</head>
+
+<body style="margin: 0; font-family: sans-serif;">
+
+    <div style="display: flex; height: 100vh;">
+        <!-- Sidebar -->
+        <div style="width: 200px; background-color: #f4f4f4; padding: 20px; border-right: 1px solid #ddd;">
+            <h3>Menu</h3>
+            <ul style="list-style-type: none; padding: 0;">
+                <li style="margin-bottom: 10px;"><a href="/dashboard"
+                        style="text-decoration: none; color: #333;">Dashboard</a></li>
+                <li style="margin-bottom: 10px;"><a href="/evaluate"
+                        style="text-decoration: none; color: #333;">Evaluate</a></li>
+                <li style="margin-bottom: 10px;"><a href="#" onclick="logout()"
+                        style="text-decoration: none; color: #333;">Logout</a></li>
+            </ul>
+        </div>
+
+        <!-- Main Content -->
+        <div style="flex-grow: 1; padding: 20px;">
+            <h2>Evaluate Answer Sheets</h2>
+            <p>Select a question paper and upload an answer sheet to evaluate.</p>
+
+            <hr>
+
+            <h3>1. Select Question Paper</h3>
+            <select id="questionPaperSelect" style="padding: 5px; width: 300px;">
+                <option disabled selected>Select a Question Paper</option>
+                {% for paper in question_papers %}
+                <option value="{{ paper.qp_id }}">{{ paper.qp_name }}</option>
+                {% endfor %}
+            </select>
+
+            <br><br>
+
+            <h3>2. Upload Answer Sheet</h3>
+            <form id="evaluateForm" action="/evaluate" method="POST" enctype="multipart/form-data">
+                <input type="file" id="answerSheet" name="answerSheet" multiple required>
+                <br><br>
+                <div id="fileList"></div>
+                <button type="submit">Evaluate</button>
+            </form>
+            <p id="message"></p>
+        </div>
+    </div>
+
+    <script>
+        function logout() {
+            window.location.href = "/logout";
+        }
+
+        function uploadAnswerSheet() {
+            const paperSelect = document.getElementById('questionPaperSelect');
+            const fileInput = document.getElementById('answerSheet');
+
+            if (paperSelect.value === "") {
+                alert("Please select a valid question paper first.");
+                return;
+            }
+
+            if (fileInput.files.length > 0) {
+                alert("Evaluating answer sheet for paper ID: " + paperSelect.value);
+                // Add upload/evaluation logic here
+            } else {
+                alert("Please select an answer sheet file.");
+            }
+        }
+
+
+
+        document.getElementById("answerSheet").addEventListener("change", function () {
+
+            const fileListDiv = document.getElementById("fileList");
+
+            fileListDiv.innerHTML = ""; // clear previous list
+
+            const files = this.files;
+
+            for (let i = 0; i < files.length; i++) {
+
+                const p = document.createElement("p");
+                p.textContent = files[i].name;
+
+                fileListDiv.appendChild(p);
+            }
+
+        });
+
+        document.getElementById("evaluateForm").onsubmit = async function (e) {
+
+            e.preventDefault();
+
+            const response = await fetch("/evaluate", {
+                method: "POST",
+                body: new FormData(this)
+            });
+
+            const data = await response.json();
+            document.getElementById("message").innerText =
+                response.ok ? data.message : data.detail;
+        };
+    </script>
+
+</body>
+
+</html>

@@ -48,28 +48,8 @@
                 return;
             }
 
-            // ✅ STORE TOKEN FIRST
-            localStorage.setItem("token", data.access_token);
-
-
-            // ✅ Now fetch dashboard WITH token
-            const dashboardResponse = await fetch("/dashboard", {
-                headers: {
-                    "Authorization": "Bearer " + data.access_token
-                }
-            });
-
-            if (dashboardResponse.ok) {
-
-                const html = await dashboardResponse.text();
-
-                document.open();
-                document.write(html);
-                document.close();
-
-            } else {
-                alert("Unauthorized");
-            }
+            // Cookie is set by server automatically
+            window.location.href = "/dashboard";
         }
 
     </script>
