@@ -15,6 +15,8 @@ DB_USERNAME = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 DB_NAME = os.getenv("DB_NAME")
 DB_SSL_CA = os.getenv("DB_SSL_CA")
+# CA_PATH = os.getenv("CA")
+# CA_PATH = os.path.join(BASE_DIR, "certs", "isrgrootx1.pem")
 
 if not all([DB_HOST, DB_PORT, DB_USERNAME, DB_PASSWORD, DB_NAME]):
     raise RuntimeError("Database environment variables missing")

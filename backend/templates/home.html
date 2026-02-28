@@ -1,15 +1,200 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Welcome</title>
+    <title>Welcome - AutoGrade</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #06b6d4;
+            --primary-hover: #22d3ee;
+            --bg: #020617;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --card-bg: rgba(15, 23, 42, 0.4);
+            --glow: rgba(6, 182, 212, 0.15);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg);
+            background-image:
+                radial-gradient(circle at 50% 50%, rgba(6, 182, 212, 0.08) 0%, transparent 60%),
+                linear-gradient(rgba(30, 41, 59, 0.15) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(30, 41, 59, 0.15) 1px, transparent 1px);
+            background-size: 100% 100%, 30px 30px, 30px 30px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-main);
+            text-align: center;
+            overflow: hidden;
+        }
+
+        @keyframes entrance {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes float {
+            0% {
+                transform: translateY(0px);
+            }
+
+            50% {
+                transform: translateY(-8px);
+            }
+
+            100% {
+                transform: translateY(0px);
+            }
+        }
+
+        h1 {
+            font-size: 3.5rem;
+            font-weight: 700;
+            margin-bottom: 0.75rem;
+            background: linear-gradient(135deg, #22d3ee 0%, #818cf8 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.04em;
+            animation: float 5s ease-in-out infinite, entrance 1s ease-out;
+        }
+
+        p {
+            font-size: 1.1rem;
+            color: var(--text-muted);
+            max-width: 500px;
+            margin-bottom: 2rem;
+            line-height: 1.6;
+            animation: entrance 1s ease-out 0.2s both;
+        }
+
+        a {
+            display: inline-block;
+            text-decoration: none;
+            padding: 0.7rem 2rem;
+            border-radius: 10px;
+            font-weight: 600;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            font-size: 0.95rem;
+            margin: 0.4rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            animation: entrance 1s ease-out 0.4s both;
+        }
+
+        a[href="/login"] {
+            background-color: var(--primary);
+            color: #020617;
+            box-shadow: 0 0 15px rgba(6, 182, 212, 0.3);
+        }
+
+        a[href="/login"]:hover {
+            background-color: white;
+            transform: translateY(-4px) scale(1.05);
+            box-shadow: 0 15px 30px rgba(6, 182, 212, 0.4);
+        }
+
+        a[href="/register"] {
+            border: 1px solid rgba(226, 232, 240, 0.15);
+            color: var(--text-main);
+            background: rgba(255, 255, 255, 0.02);
+            backdrop-filter: blur(8px);
+        }
+
+        a[href="/register"]:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+            background-color: rgba(6, 182, 212, 0.08);
+            transform: translateY(-4px) scale(1.05);
+        }
+
+        br {
+            display: none;
+        }
+
+        .hero {
+            padding: 3rem 4rem;
+            background: var(--card-bg);
+            backdrop-filter: blur(15px);
+            border-radius: 32px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            margin: 1rem;
+            position: relative;
+            transition: all 0.5s ease;
+            animation: entrance 1s ease-out;
+        }
+
+        .hero:hover {
+            border-color: rgba(6, 182, 212, 0.3);
+            box-shadow: 0 0 40px rgba(6, 182, 212, 0.1);
+            transform: scale(1.01);
+        }
+
+        .hero::before,
+        .hero::after {
+            content: '';
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            border: 1.5px solid var(--primary);
+            opacity: 0.4;
+            transition: all 0.5s ease;
+        }
+
+        .hero::before {
+            top: 15px;
+            left: 15px;
+            border-right: 0;
+            border-bottom: 0;
+        }
+
+        .hero::after {
+            bottom: 15px;
+            right: 15px;
+            border-left: 0;
+            border-top: 0;
+        }
+
+        .hero:hover::before {
+            top: 10px;
+            left: 10px;
+            opacity: 1;
+        }
+
+        .hero:hover::after {
+            bottom: 10px;
+            right: 10px;
+            opacity: 1;
+        }
+    </style>
 </head>
+
 <body>
-    <h1>Welcome to AutoGrade</h1>
-    <p>This is a simple web application that can be used to grade assignments.</p>
-    <a href="/login">Login</a>
-    <br>
-    <a href="/register">Register</a>
+    <div class="hero">
+        <h1>Welcome to AutoGrade</h1>
+        <p>This is a simple web application that can be used to grade assignments.</p>
+        <a href="/login">Login</a>
+        <br>
+        <a href="/register">Register</a>
+    </div>
 </body>
+
 </html>
