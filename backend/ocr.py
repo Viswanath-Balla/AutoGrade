@@ -1,68 +1,68 @@
 import os
-from google import genai
-from google.genai import types
+import google.generativeai as genai
 from dotenv import load_dotenv
+import fitz  # PyMuPDF
 from PIL import Image
-import mimetypes
+import io
 
 load_dotenv()
 
-def extract_handwritten_text(file_path: str):
-    api_key = os.getenv("API_KEY")
-    if not api_key:
-        raise Exception("API_KEY not set")
-    
-    client = genai.Client(api_key=api_key)
-    
-    prompt = """
-    You are a strict OCR engine.
-    Extract ALL handwritten and printed text exactly as shown.
-    Do NOT summarize.
-    Preserve formatting.
-    If no text is found, return: NO TEXT FOUND.
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
+# 🔥 Use PRO model for handwriting
+model = genai.GenerativeModel("gemini-1.5-pro")
+
+
+def extract_handwritten_text(file_path: str) -> str:
     """
-    
-    mime_type, _ = mimetypes.guess_type(file_path)
-    
+    Extract handwritten text from PDF or image using Gemini Vision.
+    Converts PDF pages to images before sending.
+    """
+
     try:
-        # ✅ PDF HANDLING
-        if mime_type == "application/pdf":
-            # Upload file instead of inline
-            uploaded_file = client.files.upload(file=file_path)
-            
-            response = client.models.generate_content(
-                model="gemini-1.5-flash",
-                contents=[prompt, uploaded_file],
-                config=types.GenerateContentConfig(
-                    temperature=0
+        full_text = ""
+
+        if file_path.lower().endswith(".pdf"):
+
+            doc = fitz.open(file_path)
+
+            for page in doc:
+                pix = page.get_pixmap(dpi=300)  # high resolution
+                img_bytes = pix.tobytes("png")
+
+                response = model.generate_content(
+                    [
+                        "Extract all handwritten and printed text clearly from this image. "
+                        "Preserve question numbers and formatting. "
+                        "Do not summarize.",
+                        {
+                            "mime_type": "image/png",
+                            "data": img_bytes
+                        }
+                    ]
                 )
-            )
-        
-        # ✅ IMAGE HANDLING
+
+                full_text += response.text.strip() + "\n\n"
+
         else:
             with open(file_path, "rb") as f:
                 image_bytes = f.read()
-            
-            image_part = types.Part.from_bytes(
-                data=image_bytes,
-                mime_type=mime_type or "image/png"
+
+            response = model.generate_content(
+                [
+                    "Extract all handwritten and printed text clearly from this image. "
+                    "Preserve question numbers and formatting. "
+                    "Do not summarize.",
+                    {
+                        "mime_type": "image/png",
+                        "data": image_bytes
+                    }
+                ]
             )
-            
-            response = client.models.generate_content(
-                model="gemini-1.5-flash",
-                contents=[prompt, image_part],
-                config=types.GenerateContentConfig(
-                    temperature=0
-                )
-            )
-        
-        extracted_text = response.text
-        print(f"--- Extracted Text from {file_path} ---")
-        print(extracted_text)
-        print("-------------------------------------------")
-        return extracted_text
-    
+
+            full_text = response.text.strip()
+
+        return full_text
+
     except Exception as e:
-        error_msg = f"OCR failed: {str(e)}"
-        print(error_msg)
-        return error_msg
+        raise Exception(f"OCR Extraction Failed: {str(e)}")

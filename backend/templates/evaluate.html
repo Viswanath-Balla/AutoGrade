@@ -1,394 +1,54 @@
-<!DOCTYPE html>
-<html lang="en">
+<div class="card">
+    <form id="evaluateForm" method="POST" action="/evaluate" enctype="multipart/form-data">
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Evaluate - AutoGrade</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --primary: #06b6d4;
-            --primary-hover: #22d3ee;
-            --bg: #020617;
-            --sidebar-bg: rgba(15, 23, 42, 0.85);
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-            --border: rgba(255, 255, 255, 0.08);
-            --card-bg: rgba(30, 41, 59, 0.3);
-        }
+        <h3><span class="step-number">1</span> Select Question Paper</h3>
 
-        body {
-            margin: 0;
-            font-family: 'Outfit', sans-serif;
-            background-color: var(--bg);
-            background-image:
-                radial-gradient(circle at 10% 20%, rgba(6, 182, 212, 0.04) 0%, transparent 40%),
-                radial-gradient(circle at 90% 80%, rgba(129, 140, 248, 0.04) 0%, transparent 40%);
-            color: var(--text-main);
-            overflow: hidden;
-        }
+        <select id="questionPaperSelect" name="paper_id" required>
+            <option value="">Select a Question Paper</option>
+            {% for paper in question_papers %}
+            <option value="{{ paper.qp_id }}">{{ paper.qp_name }}</option>
+            {% endfor %}
+        </select>
 
-        .layout {
-            display: flex;
-            height: 100vh;
-        }
+        <br><br>
 
-        /* Sidebar Styling */
-        .sidebar {
-            width: 250px;
-            background-color: var(--sidebar-bg);
-            padding: 2.25rem 1.25rem;
-            border-right: 1px solid var(--border);
-            display: flex;
-            flex-direction: column;
-            backdrop-filter: blur(25px);
-        }
+        <h3><span class="step-number">2</span> Upload Answer Sheet</h3>
 
-        .sidebar h3 {
-            font-size: 0.65rem;
-            text-transform: uppercase;
-            letter-spacing: 0.2em;
-            color: var(--primary);
-            margin-bottom: 2rem;
-            padding-left: 0.75rem;
-            opacity: 0.6;
-        }
+        <input type="file" name="answerSheet" id="answerSheet" required>
 
-        .sidebar ul {
-            list-style-type: none;
-            padding: 0;
-            margin: 0;
-        }
+        <div id="fileList"></div>
 
-        .sidebar li {
-            margin-bottom: 0.6rem;
-        }
+        <button type="submit">Start Evaluation</button>
 
-        .sidebar a {
-            text-decoration: none;
-            color: var(--text-muted);
-            display: flex;
-            align-items: center;
-            padding: 0.75rem 1.25rem;
-            border-radius: 12px;
-            font-weight: 500;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            border: 1px solid transparent;
-            font-size: 0.9rem;
-        }
+    </form>
 
-        .sidebar a:hover {
-            color: var(--primary);
-            background-color: rgba(6, 182, 212, 0.04);
-            border-color: rgba(6, 182, 212, 0.1);
-            transform: translateX(4px);
-        }
+    <p id="message"></p>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
 
-        .sidebar a.active {
-            background-color: rgba(6, 182, 212, 0.08);
-            color: var(--primary);
-            border-color: rgba(6, 182, 212, 0.3);
-            box-shadow: 0 0 20px rgba(6, 182, 212, 0.1);
-        }
+    document.getElementById("evaluateForm").addEventListener("submit", async function (e) {
+        e.preventDefault();
 
-        /* Main Content Styling */
-        .main-content {
-            flex-grow: 1;
-            padding: 2.5rem 3.5rem;
-            overflow-y: auto;
-        }
+        const formData = new FormData(this);
 
-        .header-section {
-            margin-bottom: 2.5rem;
-        }
-
-        .header-section h2 {
-            font-size: 2.2rem;
-            font-weight: 700;
-            margin: 0;
-            margin-bottom: 0.4rem;
-            background: linear-gradient(135deg, #fff 0%, #94a3b8 100%);
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-            letter-spacing: -0.02em;
-        }
-
-        .header-section p {
-            color: var(--text-muted);
-            margin: 0;
-            font-size: 1rem;
-            opacity: 0.8;
-        }
-
-        .card {
-            background-color: var(--card-bg);
-            border-radius: 20px;
-            padding: 1.5rem 2rem;
-            border: 1px solid var(--border);
-            backdrop-filter: blur(10px);
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-            margin-bottom: 1.5rem;
-            max-width: 600px;
-            transition: all 0.4s ease;
-        }
-
-        .card:hover {
-            border-color: rgba(6, 182, 212, 0.2);
-            transform: translateY(-2px);
-        }
-
-        .card h3 {
-            margin-top: 0;
-            font-size: 1.2rem;
-            font-weight: 600;
-            margin-bottom: 1.25rem;
-            display: flex;
-            align-items: center;
-            color: var(--text-main);
-        }
-
-        .card h3 .step-number {
-            background-color: var(--primary);
-            color: #020617;
-            width: 28px;
-            height: 28px;
-            border-radius: 50%;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.85rem;
-            font-weight: 700;
-            margin-right: 0.75rem;
-            box-shadow: 0 0 15px rgba(6, 182, 212, 0.3);
-        }
-
-        select {
-            width: 100%;
-            max-width: 400px;
-            padding: 0.85rem 3rem 0.85rem 1.25rem;
-            border-radius: 12px;
-            border: 1px solid var(--border);
-            background: rgba(255, 255, 255, 0.03);
-            font-family: inherit;
-            font-size: 0.95rem;
-            color: white;
-            cursor: pointer;
-            outline: none;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            appearance: none;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2306b6d4' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
-            background-repeat: no-repeat;
-            background-position: right 1.25rem center;
-            background-size: 1.1rem;
-            box-sizing: border-box;
-        }
-
-        select:hover {
-            border-color: rgba(6, 182, 212, 0.5);
-            background-color: rgba(6, 182, 212, 0.02);
-        }
-
-        select:focus {
-            border-color: var(--primary);
-            background-color: rgba(6, 182, 212, 0.05);
-            box-shadow: 0 0 0 4px rgba(6, 182, 212, 0.1);
-        }
-
-        select option {
-            background-color: #0f172a;
-            color: white;
-            padding: 12px;
-        }
-
-        input[type="file"] {
-            display: block;
-            width: 100%;
-            padding: 1.5rem;
-            background: rgba(255, 255, 255, 0.01);
-            border: 1.5px dashed var(--border);
-            border-radius: 14px;
-            margin-bottom: 1.25rem;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            color: var(--text-muted);
-            font-size: 0.85rem;
-            box-sizing: border-box;
-        }
-
-        input[type="file"]::file-selector-button {
-            background-color: rgba(6, 182, 212, 0.1);
-            color: var(--primary);
-            border: 1px solid rgba(6, 182, 212, 0.2);
-            padding: 0.4rem 0.8rem;
-            border-radius: 6px;
-            margin-right: 1rem;
-            font-family: inherit;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        input[type="file"]:hover {
-            border-color: var(--primary);
-            background: rgba(6, 182, 212, 0.03);
-        }
-
-        button {
-            background-color: var(--primary);
-            color: #020617;
-            padding: 0.75rem 2rem;
-            border-radius: 10px;
-            border: none;
-            font-weight: 700;
-            font-size: 0.9rem;
-            cursor: pointer;
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            font-family: inherit;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        button:hover {
-            background-color: white;
-            transform: translateY(-3px) scale(1.02);
-            box-shadow: 0 10px 20px rgba(6, 182, 212, 0.3);
-        }
-
-        #fileList {
-            margin-bottom: 1.25rem;
-        }
-
-        #fileList p {
-            background: rgba(255, 255, 255, 0.04);
-            padding: 0.6rem 1rem;
-            border-radius: 8px;
-            margin: 0.4rem 0;
-            font-size: 0.85rem;
-            color: var(--text-muted);
-            border: 1px solid var(--border);
-        }
-
-        #message {
-            margin-top: 1.25rem;
-            font-weight: 500;
-            color: var(--primary);
-            font-size: 0.9rem;
-        }
-
-        hr {
-            border: 0;
-            border-top: 1px solid var(--border);
-            margin: 2.5rem 0;
-            opacity: 0.5;
-        }
-    </style>
-</head>
-
-<body>
-
-    <div class="layout">
-        <!-- Sidebar -->
-        <div class="sidebar">
-            <h3>Menu</h3>
-            <ul>
-                <li><a href="/dashboard">Dashboard</a></li>
-                <li><a href="/evaluate" class="active">Evaluate</a></li>
-                <li><a href="#" onclick="logout()">Logout</a></li>
-            </ul>
-        </div>
-
-        <!-- Main Content -->
-        <div class="main-content">
-            <div class="header-section">
-                <h2>Evaluate Answer Sheets</h2>
-                <p>Select a question paper and upload an answer sheet to evaluate.</p>
-            </div>
-
-            <hr>
-
-            <div class="card">
-                <h3><span class="step-number">1</span> Select Question Paper</h3>
-                <select id="questionPaperSelect">
-                    <option disabled selected>Select a Question Paper</option>
-                    {% for paper in question_papers %}
-                    <option value="{{ paper.qp_id }}">{{ paper.qp_name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div class="card">
-                <h3><span class="step-number">2</span> Upload Answer Sheet</h3>
-                <form id="evaluateForm" action="/evaluate" method="POST" enctype="multipart/form-data">
-                    <input type="file" id="answerSheet" name="answerSheet" multiple required>
-                    <div id="fileList"></div>
-                    <button type="submit">Start Evaluation</button>
-                </form>
-                <p id="message"></p>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        function logout() {
-            window.location.href = "/logout";
-        }
-
-        function uploadAnswerSheet() {
-            const paperSelect = document.getElementById('questionPaperSelect');
-            const fileInput = document.getElementById('answerSheet');
-
-            if (paperSelect.value === "") {
-                alert("Please select a valid question paper first.");
-                return;
-            }
-
-            if (fileInput.files.length > 0) {
-                alert("Evaluating answer sheet for paper ID: " + paperSelect.value);
-                // Add upload/evaluation logic here
-            } else {
-                alert("Please select an answer sheet file.");
-            }
-        }
-
-
-
-        document.getElementById("answerSheet").addEventListener("change", function () {
-
-            const fileListDiv = document.getElementById("fileList");
-
-            fileListDiv.innerHTML = ""; // clear previous list
-
-            const files = this.files;
-
-            for (let i = 0; i < files.length; i++) {
-
-                const p = document.createElement("p");
-                p.textContent = files[i].name;
-
-                fileListDiv.appendChild(p);
-            }
-
+        const response = await fetch("/evaluate", {
+            method: "POST",
+            body: formData
         });
 
-        document.getElementById("evaluateForm").onsubmit = async function (e) {
+        const data = await response.json();
 
-            e.preventDefault();
+        if (response.ok) {
+            document.getElementById("message").textContent =
+                "========== QUESTION PAPER TEXT ==========\n\n" +
+                data.question_paper_text +
+                "\n\n========== ANSWER SHEET TEXT ==========\n\n" +
+                data.answer_sheet_text;
+        } else {
+            document.getElementById("message").textContent = data.detail;
+        }
+    });
 
-            const response = await fetch("/evaluate", {
-                method: "POST",
-                body: new FormData(this)
-            });
-
-            const data = await response.json();
-            document.getElementById("message").innerText =
-                response.ok ? data.message : data.detail;
-        };
-    </script>
-
-</body>
-
-</html>
+});
+</script>

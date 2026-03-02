@@ -14,8 +14,19 @@ from fastapi import HTTPException, Depends
 from security import verify_password, create_access_token
 from dependencies import get_current_user
 from ocr import extract_handwritten_text 
-
+from fastapi import Form, File, UploadFile, Depends
+from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
+import shutil
+import os
+from PIL import Image
+import pytesseract
+import fitz  # PyMuPDF
+from models import QuestionPaper
+from db import get_db
 app = FastAPI()
+
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 templates = Jinja2Templates(directory="templates")
 
@@ -172,67 +183,84 @@ def upload_question_paper(
 
     return {"message": "Uploaded successfully"}
 
+from fastapi import Form
+from gemini_service import (
+    structure_answers,
+    structure_questions,
+    evaluate_answers
+)
+from ocr import extract_handwritten_text
+from pypdf import PdfReader
+
+def extract_pdf_text(path: str):
+    reader = PdfReader(path)
+    text = ""
+    for page in reader.pages:
+        text += page.extract_text() + "\n"
+    return text
+
+UPLOAD_FOLDER = "uploads"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+def extract_text(file_path):
+    text = ""
+
+    if file_path.lower().endswith(".pdf"):
+        doc = fitz.open(file_path)
+        for page in doc:
+            text += page.get_text()
+
+    elif file_path.lower().endswith((".png", ".jpg", ".jpeg")):
+        image = Image.open(file_path)
+        text = pytesseract.image_to_string(image)
+
+    else:
+        raise Exception("Unsupported file type")
+
+    return text
+
 @app.post("/evaluate")
 async def evaluate(
-    request: Request,
-    answerSheet: List[UploadFile] = File(...),
-    user=Depends(get_current_user),
+    paper_id: int = Form(...),
+    answerSheet: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    if not os.path.exists(ANS_PATH):
-        os.makedirs(ANS_PATH)
+    try:
+        print("Received paper_id:", paper_id)
+        print("Uploaded file:", answerSheet.filename)
 
-    kv_dict = {}
-    message = "Answer sheets processed successfully"
+        question_paper = db.query(QuestionPaper).filter(
+            QuestionPaper.qp_id == paper_id
+        ).first()
 
-    for sheet in answerSheet:
-
-        # 1️⃣ Save file to disk
-        file_location = os.path.join(ANS_PATH, sheet.filename)
-
-        with open(file_location, "wb") as buffer:
-            buffer.write(await sheet.read())
-
-        # 2️⃣ Check duplicate in DB
-        result = db.execute(
-            select(AnswerSheet).where(
-                AnswerSheet.sheet_name == sheet.filename,
-                AnswerSheet.user_id == user["id"]
+        if not question_paper:
+            return JSONResponse(
+                status_code=404,
+                content={"detail": "Question paper not found"}
             )
+
+        print("Question paper path:", question_paper.qp_path)
+
+        qp_text = extract_text(question_paper.qp_path)
+
+        answer_path = os.path.join(UPLOAD_FOLDER, answerSheet.filename)
+
+        with open(answer_path, "wb") as buffer:
+            shutil.copyfileobj(answerSheet.file, buffer)
+
+        ans_text = extract_text(answer_path)
+
+        print("\n===== QUESTION PAPER TEXT =====\n", qp_text)
+        print("\n===== ANSWER SHEET TEXT =====\n", ans_text)
+
+        return {
+            "question_paper_text": qp_text,
+            "answer_sheet_text": ans_text
+        }
+
+    except Exception as e:
+        print("ERROR:", str(e))
+        return JSONResponse(
+            status_code=500,
+            content={"detail": str(e)}
         )
-        existing_sheet = result.scalar_one_or_none()
-
-        if existing_sheet:
-            kv_dict[sheet.filename] = "Already exists"
-            continue
-
-        try:
-            # 3️⃣ Run Gemini OCR
-            extracted_text = extract_handwritten_text(file_location)
-
-        except Exception as e:
-            extracted_text = f"OCR failed: {str(e)}"
-
-        # 4️⃣ Store in DB
-        # new_answer_sheet = AnswerSheet(
-        #     sheet_name=sheet.filename,
-        #     sheet_path=file_location,
-        #     extracted_text=extracted_text,
-        #     user_id=user["id"]
-        # )
-
-        # db.add(new_answer_sheet)
-
-        kv_dict[sheet.filename] = extracted_text
-        print(f"Extracted for {sheet.filename}:")
-        print(extracted_text)
-        print("-" * 20)
-
-    print("DICT:",kv_dict)
-    # 5️⃣ Commit once after loop
-    db.commit()
-
-    return {
-        "message": message,
-        "processed_files": list(kv_dict.keys())
-    }
