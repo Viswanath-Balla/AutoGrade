@@ -13,12 +13,12 @@ from schemas import UserCreate, UserLogin
 from fastapi import HTTPException, Depends
 from security import verify_password, create_access_token
 from dependencies import get_current_user
-from ocr import extract_handwritten_text 
+from ocr import extract_answers_from_pdf, extract_questions_from_qp
 from fastapi import Form, File, UploadFile, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 import shutil
-import os
+import json
 from PIL import Image
 # import pytesseract
 import fitz  # PyMuPDF
@@ -189,7 +189,6 @@ from gemini_service import (
     structure_questions,
     evaluate_answers
 )
-from ocr import extract_handwritten_text
 from pypdf import PdfReader
 
 def extract_pdf_text(path: str):
@@ -203,7 +202,6 @@ UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 # main.py
 
-from ocr import extract_handwritten_text  # your ocr.py file from before
 
 def extract_text(file_path):
     """
@@ -213,47 +211,55 @@ def extract_text(file_path):
     return extract_handwritten_text(file_path)
 
 @app.post("/evaluate")
-async def evaluate(
+async def evaluate_post(
+    request: Request,
     paper_id: int = Form(...),
     answerSheet: UploadFile = File(...),
+    user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     try:
         print("Received paper_id:", paper_id)
         print("Uploaded file:", answerSheet.filename)
 
-        question_paper = db.query(QuestionPaper).filter(
-            QuestionPaper.qp_id == paper_id
-        ).first()
+        # ── 1. Fetch question paper from DB ───────────────────────────
+        question_paper = db.execute(
+            select(QuestionPaper).where(
+                QuestionPaper.qp_id == paper_id,
+                QuestionPaper.user_id == user["id"]
+            )
+        ).scalar_one_or_none()
 
         if not question_paper:
-            return JSONResponse(
-                status_code=404,
-                content={"detail": "Question paper not found"}
-            )
+            raise HTTPException(status_code=404, detail="Question paper not found")
 
         print("Question paper path:", question_paper.qp_path)
 
-        qp_text = extract_text(question_paper.qp_path)
+        # ── 2. Extract questions (1 API call, cached after first run) ──
+        extracted_questions = extract_questions_from_qp(question_paper.qp_path)
 
-        answer_path = os.path.join(UPLOAD_FOLDER, answerSheet.filename)
-
+        # ── 3. Save answer sheet to disk ──────────────────────────────
+        answer_path = os.path.join(ANS_PATH, answerSheet.filename)
         with open(answer_path, "wb") as buffer:
-            shutil.copyfileobj(answerSheet.file, buffer)
+            buffer.write(await answerSheet.read())
 
-        ans_text = extract_text(answer_path)
+        # ── 4. Extract answers (1 API call, cached after first run) ───
+        extracted_answers = extract_answers_from_pdf(answer_path)
 
-        print("\n===== QUESTION PAPER TEXT =====\n", qp_text)
-        print("\n===== ANSWER SHEET TEXT =====\n", ans_text)
+        print("\n===== QUESTION PAPER =====")
+        print(json.dumps(extracted_questions, indent=2))
+        print("\n===== ANSWER SHEET =====")
+        print(json.dumps(extracted_answers, indent=2))
 
         return {
-            "question_paper_text": qp_text,
-            "answer_sheet_text": ans_text
+            "message": "Extraction successful",
+            "questions": extracted_questions,
+            "answers": extracted_answers
         }
+
+    except HTTPException:
+        raise
 
     except Exception as e:
         print("ERROR:", str(e))
-        return JSONResponse(
-            status_code=500,
-            content={"detail": str(e)}
-        )
+        raise HTTPException(status_code=500, detail=str(e))

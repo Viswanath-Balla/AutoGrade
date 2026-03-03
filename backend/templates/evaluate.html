@@ -2,7 +2,6 @@
     <form id="evaluateForm" method="POST" action="/evaluate" enctype="multipart/form-data">
 
         <h3><span class="step-number">1</span> Select Question Paper</h3>
-
         <select id="questionPaperSelect" name="paper_id" required>
             <option value="">Select a Question Paper</option>
             {% for paper in question_papers %}
@@ -13,40 +12,104 @@
         <br><br>
 
         <h3><span class="step-number">2</span> Upload Answer Sheet</h3>
-
         <input type="file" name="answerSheet" id="answerSheet" required>
-
         <div id="fileList"></div>
 
-        <button type="submit">Start Evaluation</button>
+        <button type="submit" id="submitBtn">Start Evaluation</button>
 
     </form>
 
     <p id="message"></p>
+
+    <div id="resultsBox" style="display:none; margin-top: 1.5rem;">
+        <div class="result-section">
+            <h4>Extracted Questions</h4>
+            <pre id="questionsOutput"></pre>
+        </div>
+        <div class="result-section">
+            <h4>Extracted Answers</h4>
+            <pre id="answersOutput"></pre>
+        </div>
+    </div>
 </div>
+
+<style>
+    pre {
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 1rem;
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 400px;
+        overflow-y: auto;
+    }
+    .result-section h4 {
+        color: var(--primary);
+        margin-bottom: 0.5rem;
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+    }
+</style>
+
 <script>
 document.addEventListener("DOMContentLoaded", function () {
+
+    document.getElementById("answerSheet").addEventListener("change", function () {
+        const fileListDiv = document.getElementById("fileList");
+        fileListDiv.innerHTML = "";
+        for (let i = 0; i < this.files.length; i++) {
+            const p = document.createElement("p");
+            p.textContent = this.files[i].name;
+            fileListDiv.appendChild(p);
+        }
+    });
 
     document.getElementById("evaluateForm").addEventListener("submit", async function (e) {
         e.preventDefault();
 
+        const paperSelect = document.getElementById("questionPaperSelect");
+        if (!paperSelect.value) {
+            alert("Please select a question paper first.");
+            return;
+        }
+
+        const submitBtn = document.getElementById("submitBtn");
+        submitBtn.textContent = "Processing...";
+        submitBtn.disabled = true;
+        document.getElementById("message").textContent = "Extracting text, please wait...";
+        document.getElementById("resultsBox").style.display = "none";
+
         const formData = new FormData(this);
 
-        const response = await fetch("/evaluate", {
-            method: "POST",
-            body: formData
-        });
+        try {
+            const response = await fetch("/evaluate", {
+                method: "POST",
+                body: formData
+            });
 
-        const data = await response.json();
+            const data = await response.json();
 
-        if (response.ok) {
-            document.getElementById("message").textContent =
-                "========== QUESTION PAPER TEXT ==========\n\n" +
-                data.question_paper_text +
-                "\n\n========== ANSWER SHEET TEXT ==========\n\n" +
-                data.answer_sheet_text;
-        } else {
-            document.getElementById("message").textContent = data.detail;
+            if (response.ok) {
+                document.getElementById("message").textContent = data.message;
+                document.getElementById("questionsOutput").textContent =
+                    JSON.stringify(data.questions, null, 2);
+                document.getElementById("answersOutput").textContent =
+                    JSON.stringify(data.answers, null, 2);
+                document.getElementById("resultsBox").style.display = "block";
+            } else {
+                document.getElementById("message").textContent =
+                    "Error: " + (data.detail || "Something went wrong.");
+            }
+
+        } catch (err) {
+            document.getElementById("message").textContent = "Request failed: " + err.message;
+        } finally {
+            submitBtn.textContent = "Start Evaluation";
+            submitBtn.disabled = false;
         }
     });
 
