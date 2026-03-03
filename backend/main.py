@@ -20,13 +20,13 @@ from sqlalchemy.orm import Session
 import shutil
 import os
 from PIL import Image
-import pytesseract
+# import pytesseract
 import fitz  # PyMuPDF
 from models import QuestionPaper
 from db import get_db
 app = FastAPI()
 
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+# pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 templates = Jinja2Templates(directory="templates")
 
@@ -201,23 +201,16 @@ def extract_pdf_text(path: str):
 
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+# main.py
+
+from ocr import extract_handwritten_text  # your ocr.py file from before
 
 def extract_text(file_path):
-    text = ""
-
-    if file_path.lower().endswith(".pdf"):
-        doc = fitz.open(file_path)
-        for page in doc:
-            text += page.get_text()
-
-    elif file_path.lower().endswith((".png", ".jpg", ".jpeg")):
-        image = Image.open(file_path)
-        text = pytesseract.image_to_string(image)
-
-    else:
-        raise Exception("Unsupported file type")
-
-    return text
+    """
+    Drop-in replacement for the old Tesseract extract_text().
+    Now uses Gemini Vision for far better handwriting accuracy.
+    """
+    return extract_handwritten_text(file_path)
 
 @app.post("/evaluate")
 async def evaluate(
