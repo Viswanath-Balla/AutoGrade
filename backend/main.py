@@ -13,12 +13,12 @@ from schemas import UserCreate, UserLogin
 from fastapi import HTTPException, Depends
 from security import verify_password, create_access_token
 from dependencies import get_current_user
-from ocr import extract_handwritten_text 
+from ocr import extract_handwritten_text, extract_answers_by_question
 from fastapi import Form, File, UploadFile, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 import shutil
-import os
+import os,time
 from PIL import Image
 # import pytesseract
 import fitz  # PyMuPDF
@@ -212,6 +212,8 @@ def extract_text(file_path):
     """
     return extract_handwritten_text(file_path)
 
+
+
 @app.post("/evaluate")
 async def evaluate(
     paper_id: int = Form(...),
@@ -222,6 +224,7 @@ async def evaluate(
         print("Received paper_id:", paper_id)
         print("Uploaded file:", answerSheet.filename)
 
+        # --- Fetch question paper from DB ---
         question_paper = db.query(QuestionPaper).filter(
             QuestionPaper.qp_id == paper_id
         ).first()
@@ -232,27 +235,34 @@ async def evaluate(
                 content={"detail": "Question paper not found"}
             )
 
-        print("Question paper path:", question_paper.qp_path)
+        # --- Extract question paper text ---
+        qp_text = extract_handwritten_text(question_paper.qp_path)
 
-        qp_text = extract_text(question_paper.qp_path)
-
-        answer_path = os.path.join(UPLOAD_FOLDER, answerSheet.filename)
+        # --- Save uploaded answer sheet ---
+        # Give unique name to avoid filename collisions
+        ext = os.path.splitext(answerSheet.filename)[1]
+        unique_filename = f"ans_{paper_id}_{int(time.time())}{ext}"
+        answer_path = os.path.join(UPLOAD_FOLDER, unique_filename)
 
         with open(answer_path, "wb") as buffer:
             shutil.copyfileobj(answerSheet.file, buffer)
 
-        ans_text = extract_text(answer_path)
+        print("Answer sheet saved to:", answer_path)
+
+        # --- Extract answers grouped by question ---
+        answers_by_question = extract_answers_by_question(answer_path)
 
         print("\n===== QUESTION PAPER TEXT =====\n", qp_text)
-        print("\n===== ANSWER SHEET TEXT =====\n", ans_text)
+        print("\n===== ANSWERS BY QUESTION =====\n", answers_by_question)
 
         return {
             "question_paper_text": qp_text,
-            "answer_sheet_text": ans_text
+            "answers_by_question": answers_by_question
         }
 
     except Exception as e:
-        print("ERROR:", str(e))
+        import traceback
+        traceback.print_exc()
         return JSONResponse(
             status_code=500,
             content={"detail": str(e)}

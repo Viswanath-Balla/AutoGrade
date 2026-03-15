@@ -18,35 +18,103 @@
 
         <div id="fileList"></div>
 
-        <button type="submit">Start Evaluation</button>
+        <button type="submit" id="submitBtn">Start Evaluation</button>
 
     </form>
 
     <p id="message"></p>
+
+    <div id="results" style="display:none;">
+
+        <div id="questionPaperSection">
+            <h3>📄 Question Paper</h3>
+            <pre id="qpText"></pre>
+        </div>
+
+        <hr>
+
+        <div id="answersSection">
+            <h3>✍️ Extracted Answers by Question</h3>
+            <div id="answersContainer"></div>
+        </div>
+
+    </div>
 </div>
+
 <script>
 document.addEventListener("DOMContentLoaded", function () {
 
     document.getElementById("evaluateForm").addEventListener("submit", async function (e) {
         e.preventDefault();
 
+        const submitBtn = document.getElementById("submitBtn");
+        const message = document.getElementById("message");
+        const results = document.getElementById("results");
+
+        // Reset UI
+        results.style.display = "none";
+        message.textContent = "⏳ Extracting text, please wait...";
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Processing...";
+
         const formData = new FormData(this);
 
-        const response = await fetch("/evaluate", {
-            method: "POST",
-            body: formData
-        });
+        try {
+            const response = await fetch("/evaluate", {
+                method: "POST",
+                body: formData
+            });
 
-        const data = await response.json();
+            const data = await response.json();
 
-        if (response.ok) {
-            document.getElementById("message").textContent =
-                "========== QUESTION PAPER TEXT ==========\n\n" +
-                data.question_paper_text +
-                "\n\n========== ANSWER SHEET TEXT ==========\n\n" +
-                data.answer_sheet_text;
-        } else {
-            document.getElementById("message").textContent = data.detail;
+            if (response.ok) {
+                message.textContent = "";
+
+                // --- Question Paper Text ---
+                document.getElementById("qpText").textContent = data.question_paper_text;
+
+                // --- Answers by Question ---
+                const container = document.getElementById("answersContainer");
+                container.innerHTML = "";
+
+                const answers = data.answers_by_question;
+
+                if (answers.raw) {
+                    // Fallback: Gemini returned plain text instead of JSON
+                    const block = document.createElement("pre");
+                    block.textContent = answers.raw;
+                    container.appendChild(block);
+                } else {
+                    // Structured: render each question in its own card
+                    for (const [questionKey, answerText] of Object.entries(answers)) {
+                        const card = document.createElement("div");
+                        card.style.cssText = "border:1px solid #ddd; border-radius:8px; padding:16px; margin-bottom:12px;";
+
+                        const label = document.createElement("h4");
+                        label.textContent = questionKey.toUpperCase();
+                        label.style.cssText = "margin:0 0 8px 0; color:#333;";
+
+                        const text = document.createElement("pre");
+                        text.textContent = answerText;
+                        text.style.cssText = "margin:0; white-space:pre-wrap; word-break:break-word; font-family:inherit;";
+
+                        card.appendChild(label);
+                        card.appendChild(text);
+                        container.appendChild(card);
+                    }
+                }
+
+                results.style.display = "block";
+
+            } else {
+                message.textContent = "❌ Error: " + data.detail;
+            }
+
+        } catch (err) {
+            message.textContent = "❌ Network error: " + err.message;
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Start Evaluation";
         }
     });
 

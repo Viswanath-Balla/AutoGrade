@@ -84,123 +84,252 @@
 #     except Exception as e:
 #         raise Exception(f"OCR Extraction Failed: {str(e)}")
 
+# import os
+# import google.generativeai as genai
+# from dotenv import load_dotenv
+# import fitz  # PyMuPDF
+# # import base64
+# # import mimetypes
+
+# load_dotenv()
+
+# genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
+# model = genai.GenerativeModel("gemini-2.5-flash-lite")
+
+
+# def get_mime_type(file_path: str) -> str:
+#     """Detect correct mime type from file extension."""
+#     ext = file_path.lower().split(".")[-1]
+#     mime_map = {
+#         "jpg": "image/jpeg",
+#         "jpeg": "image/jpeg",
+#         "png": "image/png",
+#         "webp": "image/webp",
+#         "bmp": "image/bmp",
+#         "tiff": "image/tiff",
+#     }
+#     return mime_map.get(ext, "image/png")
+
+
+# def extract_from_image_bytes(image_bytes: bytes, mime_type: str, context: str = "") -> str:
+#     """Send image bytes to Gemini and extract text."""
+#     prompt = (
+#         "You are an expert OCR assistant. Your task:\n"
+#         "1. Extract ALL handwritten and printed text from this image EXACTLY as written.\n"
+#         "2. Preserve question numbers, bullet points, and formatting.\n"
+#         "3. If text is unclear, make your best guess and mark it with [unclear].\n"
+#         "4. Do NOT summarize, skip, or paraphrase anything.\n"
+#         "5. Maintain the original structure and line breaks.\n"
+#         f"{context}"
+#     )
+
+#     response = model.generate_content(
+#         [
+#             prompt,
+#             {
+#                 "mime_type": mime_type,
+#                 "data": image_bytes
+#             }
+#         ]
+#     )
+#     return response.text.strip()
+
+
+# def extract_handwritten_text(file_path: str) -> str:
+#     """
+#     Extract handwritten/printed text from PDF or image using Gemini Vision.
+#     - PDFs: each page is converted to a high-res image, labeled with page number
+#     - Images: directly sent to Gemini with correct mime type
+#     """
+
+#     if not os.path.exists(file_path):
+#         raise FileNotFoundError(f"File not found: {file_path}")
+
+#     full_text = ""
+
+#     try:
+#         if file_path.lower().endswith(".pdf"):
+#             doc = fitz.open(file_path)
+#             total_pages = len(doc)
+#             print(f"📄 Processing PDF with {total_pages} page(s)...")
+
+#             for page_num, page in enumerate(doc, start=1):
+#                 print(f"  → Extracting page {page_num}/{total_pages}...")
+
+#                 # High-res render (300 DPI for handwriting accuracy)
+#                 pix = page.get_pixmap(dpi=300)
+#                 img_bytes = pix.tobytes("png")
+
+#                 try:
+#                     page_text = extract_from_image_bytes(
+#                         image_bytes=img_bytes,
+#                         mime_type="image/png",
+#                         context=f"This is page {page_num} of {total_pages} of a scanned document."
+#                     )
+
+#                     # Label each page clearly
+#                     full_text += f"--- PAGE {page_num} ---\n{page_text}\n\n"
+
+#                 except Exception as page_err:
+#                     full_text += f"--- PAGE {page_num} ---\n[ERROR extracting this page: {page_err}]\n\n"
+
+#             doc.close()
+
+#         else:
+#             # Single image file
+#             mime_type = get_mime_type(file_path)
+#             print(f"🖼️ Processing image ({mime_type})...")
+
+#             with open(file_path, "rb") as f:
+#                 image_bytes = f.read()
+
+#             full_text = extract_from_image_bytes(
+#                 image_bytes=image_bytes,
+#                 mime_type=mime_type
+#             )
+
+#     except Exception as e:
+#         raise Exception(f"OCR Extraction Failed: {str(e)}")
+
+#     return full_text
+
+
+# # ---- Quick test ----
+# if __name__ == "__main__":
+#     import sys
+#     if len(sys.argv) < 2:
+#         print("Usage: python ocr.py <path_to_file>")
+#     else:
+#         result = extract_handwritten_text(sys.argv[1])
+#         print("\n===== EXTRACTED TEXT =====\n")
+#         print(result)
+
+
+# new
+
+# ocr.py
+
 import os
+import time
+import json
 import google.generativeai as genai
 from dotenv import load_dotenv
-import fitz  # PyMuPDF
-# import base64
-# import mimetypes
 
 load_dotenv()
-
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 model = genai.GenerativeModel("gemini-2.5-flash-lite")
 
 
-def get_mime_type(file_path: str) -> str:
-    """Detect correct mime type from file extension."""
-    ext = file_path.lower().split(".")[-1]
-    mime_map = {
-        "jpg": "image/jpeg",
-        "jpeg": "image/jpeg",
-        "png": "image/png",
-        "webp": "image/webp",
-        "bmp": "image/bmp",
-        "tiff": "image/tiff",
-    }
-    return mime_map.get(ext, "image/png")
+def upload_file_to_gemini(file_path: str) -> genai.types.File:
+    """Upload a file to Gemini Files API and wait until it's ready."""
+    print(f"⬆️ Uploading file: {file_path}")
+
+    mime_type = "application/pdf" if file_path.lower().endswith(".pdf") else _get_image_mime(file_path)
+
+    uploaded = genai.upload_file(path=file_path, mime_type=mime_type)
+
+    # Wait for file to be processed
+    while uploaded.state.name == "PROCESSING":
+        print("  ⏳ Waiting for file to be ready...")
+        time.sleep(3)
+        uploaded = genai.get_file(uploaded.name)
+
+    if uploaded.state.name == "FAILED":
+        raise Exception(f"File upload failed: {uploaded.name}")
+
+    print(f"  ✅ File ready: {uploaded.uri}")
+    return uploaded
 
 
-def extract_from_image_bytes(image_bytes: bytes, mime_type: str, context: str = "") -> str:
-    """Send image bytes to Gemini and extract text."""
-    prompt = (
-        "You are an expert OCR assistant. Your task:\n"
-        "1. Extract ALL handwritten and printed text from this image EXACTLY as written.\n"
-        "2. Preserve question numbers, bullet points, and formatting.\n"
-        "3. If text is unclear, make your best guess and mark it with [unclear].\n"
-        "4. Do NOT summarize, skip, or paraphrase anything.\n"
-        "5. Maintain the original structure and line breaks.\n"
-        f"{context}"
-    )
-
-    response = model.generate_content(
-        [
-            prompt,
-            {
-                "mime_type": mime_type,
-                "data": image_bytes
-            }
-        ]
-    )
-    return response.text.strip()
+def _get_image_mime(file_path: str) -> str:
+    ext = file_path.lower().rsplit(".", 1)[-1]
+    return {
+        "jpg": "image/jpeg", "jpeg": "image/jpeg",
+        "png": "image/png", "webp": "image/webp",
+        "bmp": "image/bmp", "tiff": "image/tiff",
+    }.get(ext, "image/png")
 
 
 def extract_handwritten_text(file_path: str) -> str:
     """
-    Extract handwritten/printed text from PDF or image using Gemini Vision.
-    - PDFs: each page is converted to a high-res image, labeled with page number
-    - Images: directly sent to Gemini with correct mime type
+    Upload entire PDF/image once to Gemini and extract all text.
+    Returns raw extracted text (preserving structure).
+    Used for QUESTION PAPERS.
     """
-
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"File not found: {file_path}")
 
-    full_text = ""
+    uploaded = upload_file_to_gemini(file_path)
+
+    prompt = """You are an expert OCR assistant.
+
+Extract ALL text from this document EXACTLY as written.
+- Preserve question numbers, sub-parts (a, b, c), and formatting.
+- Keep all printed AND handwritten text.
+- If text is unclear, write [unclear].
+- Do NOT summarize, skip, or paraphrase anything.
+- Maintain original structure and line breaks.
+"""
+
+    response = model.generate_content([prompt, uploaded])
+
+    # Clean up uploaded file
+    try:
+        genai.delete_file(uploaded.name)
+    except Exception:
+        pass
+
+    return response.text.strip()
+
+def extract_answers_by_question(file_path: str) -> dict:
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"File not found: {file_path}")
+
+    uploaded = upload_file_to_gemini(file_path)
+
+    prompt = """You are an expert OCR assistant analyzing a student's handwritten answer sheet.
+
+Your task:
+1. Extract each answer written by the student.
+2. Group answers by their question number (e.g., Q1, Q2, Q3).
+3. If an answer spans multiple pages, combine it into ONE complete answer.
+4. Preserve sub-parts (a, b, c) within each question.
+5. Extract EXACT handwritten text — do NOT summarize or paraphrase.
+6. If text is unclear, write [unclear].
+
+Return ONLY a valid JSON object like:
+{
+  "Q1": "full answer for question 1...",
+  "Q2": "full answer for question 2...",
+  "Q3": "full answer for question 3..."
+}
+
+- No markdown, no code fences, no extra explanation.
+- Only raw JSON.
+"""
+
+    response = model.generate_content([prompt, uploaded])
 
     try:
-        if file_path.lower().endswith(".pdf"):
-            doc = fitz.open(file_path)
-            total_pages = len(doc)
-            print(f"📄 Processing PDF with {total_pages} page(s)...")
+        genai.delete_file(uploaded.name)
+    except Exception:
+        pass
 
-            for page_num, page in enumerate(doc, start=1):
-                print(f"  → Extracting page {page_num}/{total_pages}...")
+    # ✅ Print raw response for debugging
+    raw = response.text.strip()
+    print("\n===== RAW GEMINI RESPONSE (answer sheet) =====\n", raw)
 
-                # High-res render (300 DPI for handwriting accuracy)
-                pix = page.get_pixmap(dpi=300)
-                img_bytes = pix.tobytes("png")
+    # Strip markdown fences if Gemini adds them
+    if "```" in raw:
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+        raw = raw.strip()
 
-                try:
-                    page_text = extract_from_image_bytes(
-                        image_bytes=img_bytes,
-                        mime_type="image/png",
-                        context=f"This is page {page_num} of {total_pages} of a scanned document."
-                    )
-
-                    # Label each page clearly
-                    full_text += f"--- PAGE {page_num} ---\n{page_text}\n\n"
-
-                except Exception as page_err:
-                    full_text += f"--- PAGE {page_num} ---\n[ERROR extracting this page: {page_err}]\n\n"
-
-            doc.close()
-
-        else:
-            # Single image file
-            mime_type = get_mime_type(file_path)
-            print(f"🖼️ Processing image ({mime_type})...")
-
-            with open(file_path, "rb") as f:
-                image_bytes = f.read()
-
-            full_text = extract_from_image_bytes(
-                image_bytes=image_bytes,
-                mime_type=mime_type
-            )
-
-    except Exception as e:
-        raise Exception(f"OCR Extraction Failed: {str(e)}")
-
-    return full_text
-
-
-# ---- Quick test ----
-if __name__ == "__main__":
-    import sys
-    if len(sys.argv) < 2:
-        print("Usage: python ocr.py <path_to_file>")
-    else:
-        result = extract_handwritten_text(sys.argv[1])
-        print("\n===== EXTRACTED TEXT =====\n")
-        print(result)
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        print("⚠️ JSON parse failed:", e)
+        return {"raw": raw}  # fallback: return as plain text
