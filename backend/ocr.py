@@ -262,17 +262,49 @@ def extract_handwritten_text(file_path: str) -> str:
         raise FileNotFoundError(f"File not found: {file_path}")
 
     uploaded = upload_file_to_gemini(file_path)
+    prompt = """You are an expert OCR assistant analyzing a student's handwritten answer sheet.
 
-    prompt = """You are an expert OCR assistant.
+Extract each answer and group by question number. Follow these rules strictly:
 
-Extract ALL text from this document EXACTLY as written.
-- Preserve question numbers, sub-parts (a, b, c), and formatting.
-- Keep all printed AND handwritten text.
+━━━ TEXT ━━━
+- Extract handwritten text EXACTLY as written — do NOT paraphrase or correct.
+- Preserve sub-parts (a, b, c) within each question.
+- If an answer spans multiple pages, combine into ONE complete answer.
 - If text is unclear, write [unclear].
-- Do NOT summarize, skip, or paraphrase anything.
-- Maintain original structure and line breaks.
-"""
 
+━━━ TABLES ━━━
+- If a student has drawn or written a table, render it in Markdown format.
+- Wrap each table like:
+  [TABLE_START]
+  | Col1 | Col2 |
+  |------|------|
+  | val  | val  |
+  [TABLE_END]
+
+━━━ DIAGRAMS ━━━
+- If a student has drawn a diagram, describe it structurally inside:
+  [DIAGRAM_START]
+  Type: <Flowchart / Circuit / Block Diagram / Graph / Tree / Other>
+  Components: <all labeled parts, nodes, symbols>
+  Connections/Flow: <how they connect or relate>
+  Labels: <all text labels or values in the diagram>
+  Overall Meaning: <one-sentence summary of what it represents>
+  [DIAGRAM_END]
+
+━━━ OUTPUT FORMAT ━━━
+Return ONLY a valid JSON object. Keys are question numbers (Q1, Q2, etc.).
+Values are strings containing the full answer (text + embedded [TABLE_START]...[TABLE_END] and [DIAGRAM_START]...[DIAGRAM_END] blocks as needed).
+
+Example:
+{
+  "Q1": "The process is as follows:\\n[DIAGRAM_START]\\nType: Flowchart\\nComponents: Start, Process A, Decision, End\\nConnections/Flow: Start -> Process A -> Decision -> End\\nLabels: Yes/No on decision\\nOverall Meaning: Represents a basic decision-making flow\\n[DIAGRAM_END]",
+  "Q2": "The truth table is:\\n[TABLE_START]\\n| A | B | Output |\\n|---|---|--------|\\n| 0 | 0 | 0      |\\n[TABLE_END]",
+  "Q3": "Newton's second law states force equals mass times acceleration."
+}
+
+- No markdown code fences, no extra explanation outside the JSON.
+- Only raw JSON.
+"""
     response = model.generate_content([prompt, uploaded])
 
     # Clean up uploaded file

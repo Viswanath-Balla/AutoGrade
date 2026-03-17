@@ -1,5 +1,5 @@
 <div class="card">
-    <form id="evaluateForm" method="POST" action="/evaluate" enctype="multipart/form-data">
+    <div id="evaluateForm">
 
         <h3><span class="step-number">1</span> Select Question Paper</h3>
 
@@ -12,52 +12,64 @@
 
         <br><br>
 
-        <h3><span class="step-number">2</span> Upload Answer Sheet</h3>
+        <h3><span class="step-number">2</span> Upload Answer Sheets</h3>
 
-        <input type="file" name="answerSheet" id="answerSheet" required>
+        <!-- ✅ multiple added -->
+        <input type="file" name="answerSheet" id="answerSheet" multiple accept=".pdf" required>
 
         <div id="fileList"></div>
 
-        <button type="submit" id="submitBtn">Start Evaluation</button>
+        <button type="button" id="submitBtn" onclick="handleSubmit()">Start Evaluation</button>
 
-    </form>
+    </div>
 
     <p id="message"></p>
 
-    <div id="results" style="display:none;">
-
-        <div id="questionPaperSection">
-            <h3>📄 Question Paper</h3>
-            <pre id="qpText"></pre>
-        </div>
-
-        <hr>
-
-        <div id="answersSection">
-            <h3>✍️ Extracted Answers by Question</h3>
-            <div id="answersContainer"></div>
-        </div>
-
-    </div>
+    <!-- ✅ Results render here, one card per student -->
+    <div id="results"></div>
 </div>
 
 <script>
-document.addEventListener("DOMContentLoaded", function () {
+async function handleSubmit() {
+    const submitBtn = document.getElementById("submitBtn");
+    const message = document.getElementById("message");
+    const resultsContainer = document.getElementById("results");
 
-    document.getElementById("evaluateForm").addEventListener("submit", async function (e) {
-        e.preventDefault();
+    const paperId = document.getElementById("questionPaperSelect").value;
+    const files = document.getElementById("answerSheet").files;
 
-        const submitBtn = document.getElementById("submitBtn");
-        const message = document.getElementById("message");
-        const results = document.getElementById("results");
+    if (!paperId) {
+        message.textContent = "❌ Please select a question paper.";
+        return;
+    }
+    if (files.length === 0) {
+        message.textContent = "❌ Please upload at least one answer sheet.";
+        return;
+    }
 
-        // Reset UI
-        results.style.display = "none";
-        message.textContent = "⏳ Extracting text, please wait...";
-        submitBtn.disabled = true;
-        submitBtn.textContent = "Processing...";
+    // Reset UI
+    resultsContainer.innerHTML = "";
+    message.textContent = `⏳ Evaluating 0 of ${files.length} sheets...`;
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Processing...";
 
-        const formData = new FormData(this);
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        message.textContent = `⏳ Evaluating ${i + 1} of ${files.length}: ${file.name}`;
+
+        // Build a placeholder card immediately so user sees progress
+        const studentCard = document.createElement("div");
+        studentCard.style.cssText = "border:1px solid #ccc; border-radius:10px; padding:16px; margin-bottom:20px;";
+        studentCard.innerHTML = `
+            <h3 style="margin:0 0 8px 0;">📋 Student ${i + 1}: ${file.name}</h3>
+            <p id="status-${i}" style="color:#888;">⏳ Processing...</p>
+            <div id="content-${i}"></div>
+        `;
+        resultsContainer.appendChild(studentCard);
+
+        const formData = new FormData();
+        formData.append("paper_id", paperId);
+        formData.append("answerSheet", file);
 
         try {
             const response = await fetch("/evaluate", {
@@ -66,57 +78,72 @@ document.addEventListener("DOMContentLoaded", function () {
             });
 
             const data = await response.json();
+            const statusEl = document.getElementById(`status-${i}`);
+            const contentEl = document.getElementById(`content-${i}`);
 
             if (response.ok) {
-                message.textContent = "";
+                statusEl.textContent = "✅ Done";
+                statusEl.style.color = "green";
 
-                // --- Question Paper Text ---
-                document.getElementById("qpText").textContent = data.question_paper_text;
+                // Question paper text (collapsible)
+                const qpToggle = document.createElement("details");
+                qpToggle.innerHTML = `
+                    <summary style="cursor:pointer; font-weight:bold; margin-bottom:8px;">📄 Question Paper Text</summary>
+                    <pre style="white-space:pre-wrap; word-break:break-word; font-family:inherit;">${escapeHtml(data.question_paper_text)}</pre>
+                `;
+                contentEl.appendChild(qpToggle);
 
-                // --- Answers by Question ---
-                const container = document.getElementById("answersContainer");
-                container.innerHTML = "";
+                // Answers section
+                const answersHeader = document.createElement("h4");
+                answersHeader.textContent = "✍️ Extracted Answers";
+                answersHeader.style.marginTop = "12px";
+                contentEl.appendChild(answersHeader);
 
                 const answers = data.answers_by_question;
 
                 if (answers.raw) {
-                    // Fallback: Gemini returned plain text instead of JSON
                     const block = document.createElement("pre");
+                    block.style.cssText = "white-space:pre-wrap; word-break:break-word; font-family:inherit;";
                     block.textContent = answers.raw;
-                    container.appendChild(block);
+                    contentEl.appendChild(block);
                 } else {
-                    // Structured: render each question in its own card
                     for (const [questionKey, answerText] of Object.entries(answers)) {
-                        const card = document.createElement("div");
-                        card.style.cssText = "border:1px solid #ddd; border-radius:8px; padding:16px; margin-bottom:12px;";
+                        const qCard = document.createElement("div");
+                        qCard.style.cssText = "border:1px solid #ddd; border-radius:8px; padding:12px; margin-bottom:10px;";
 
                         const label = document.createElement("h4");
                         label.textContent = questionKey.toUpperCase();
-                        label.style.cssText = "margin:0 0 8px 0; color:#333;";
+                        label.style.cssText = "margin:0 0 6px 0; color:#333;";
 
                         const text = document.createElement("pre");
                         text.textContent = answerText;
                         text.style.cssText = "margin:0; white-space:pre-wrap; word-break:break-word; font-family:inherit;";
 
-                        card.appendChild(label);
-                        card.appendChild(text);
-                        container.appendChild(card);
+                        qCard.appendChild(label);
+                        qCard.appendChild(text);
+                        contentEl.appendChild(qCard);
                     }
                 }
 
-                results.style.display = "block";
-
             } else {
-                message.textContent = "❌ Error: " + data.detail;
+                statusEl.textContent = "❌ Error: " + data.detail;
+                statusEl.style.color = "red";
             }
 
         } catch (err) {
-            message.textContent = "❌ Network error: " + err.message;
-        } finally {
-            submitBtn.disabled = false;
-            submitBtn.textContent = "Start Evaluation";
+            document.getElementById(`status-${i}`).textContent = "❌ Network error: " + err.message;
+            document.getElementById(`status-${i}`).style.color = "red";
         }
-    });
+    }
 
-});
+    message.textContent = `✅ Finished evaluating ${files.length} sheet(s).`;
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Start Evaluation";
+}
+
+function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.appendChild(document.createTextNode(text));
+    return div.innerHTML;
+}
 </script>
