@@ -1,215 +1,3 @@
-# import os
-# import google.generativeai as genai
-# from dotenv import load_dotenv
-# import fitz  # PyMuPDF
-# from PIL import Image
-# import io
-
-# load_dotenv()
-# genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-
-# # Use PRO model for handwriting
-# model = genai.GenerativeModel("gemini-1.5-pro")
-
-
-# def extract_handwritten_text(file_path: str) -> str:
-#     """
-#     Extract handwritten + printed text from image or PDF.
-#     Labels PDF pages clearly.
-#     """
-
-#     try:
-#         full_text = ""
-
-#         prompt = """
-#         This is an exam sheet containing handwritten and printed text.
-
-#         Instructions:
-#         - Extract ALL visible text.
-#         - Preserve question numbers and formatting.
-#         - Do NOT summarize.
-#         - Do NOT correct grammar.
-#         - If a word is unclear, write [unclear].
-#         - Maintain line breaks.
-#         """
-
-#         # 🔥 Handle PDF
-#         if file_path.lower().endswith(".pdf"):
-
-#             doc = fitz.open(file_path)
-
-#             for page_number, page in enumerate(doc, start=1):
-
-#                 # High resolution improves handwriting detection
-#                 pix = page.get_pixmap(dpi=300)
-
-#                 img_bytes = pix.tobytes("png")
-
-#                 response = model.generate_content(
-#                     [
-#                         prompt,
-#                         {
-#                             "mime_type": "image/png",
-#                             "data": img_bytes
-#                         }
-#                     ]
-#                 )
-
-#                 page_text = response.text.strip()
-
-#                 full_text += f"\n\n========== PAGE {page_number} ==========\n\n"
-#                 full_text += page_text
-
-#             doc.close()
-
-#         # 🔥 Handle Image
-#         else:
-#             with open(file_path, "rb") as f:
-#                 image_bytes = f.read()
-
-#             response = model.generate_content(
-#                 [
-#                     prompt,
-#                     {
-#                         "mime_type": "image/png",
-#                         "data": image_bytes
-#                     }
-#                 ]
-#             )
-
-#             full_text = response.text.strip()
-
-#         return full_text
-
-#     except Exception as e:
-#         raise Exception(f"OCR Extraction Failed: {str(e)}")
-
-# import os
-# import google.generativeai as genai
-# from dotenv import load_dotenv
-# import fitz  # PyMuPDF
-# # import base64
-# # import mimetypes
-
-# load_dotenv()
-
-# genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-
-# model = genai.GenerativeModel("gemini-2.5-flash-lite")
-
-
-# def get_mime_type(file_path: str) -> str:
-#     """Detect correct mime type from file extension."""
-#     ext = file_path.lower().split(".")[-1]
-#     mime_map = {
-#         "jpg": "image/jpeg",
-#         "jpeg": "image/jpeg",
-#         "png": "image/png",
-#         "webp": "image/webp",
-#         "bmp": "image/bmp",
-#         "tiff": "image/tiff",
-#     }
-#     return mime_map.get(ext, "image/png")
-
-
-# def extract_from_image_bytes(image_bytes: bytes, mime_type: str, context: str = "") -> str:
-#     """Send image bytes to Gemini and extract text."""
-#     prompt = (
-#         "You are an expert OCR assistant. Your task:\n"
-#         "1. Extract ALL handwritten and printed text from this image EXACTLY as written.\n"
-#         "2. Preserve question numbers, bullet points, and formatting.\n"
-#         "3. If text is unclear, make your best guess and mark it with [unclear].\n"
-#         "4. Do NOT summarize, skip, or paraphrase anything.\n"
-#         "5. Maintain the original structure and line breaks.\n"
-#         f"{context}"
-#     )
-
-#     response = model.generate_content(
-#         [
-#             prompt,
-#             {
-#                 "mime_type": mime_type,
-#                 "data": image_bytes
-#             }
-#         ]
-#     )
-#     return response.text.strip()
-
-
-# def extract_handwritten_text(file_path: str) -> str:
-#     """
-#     Extract handwritten/printed text from PDF or image using Gemini Vision.
-#     - PDFs: each page is converted to a high-res image, labeled with page number
-#     - Images: directly sent to Gemini with correct mime type
-#     """
-
-#     if not os.path.exists(file_path):
-#         raise FileNotFoundError(f"File not found: {file_path}")
-
-#     full_text = ""
-
-#     try:
-#         if file_path.lower().endswith(".pdf"):
-#             doc = fitz.open(file_path)
-#             total_pages = len(doc)
-#             print(f"📄 Processing PDF with {total_pages} page(s)...")
-
-#             for page_num, page in enumerate(doc, start=1):
-#                 print(f"  → Extracting page {page_num}/{total_pages}...")
-
-#                 # High-res render (300 DPI for handwriting accuracy)
-#                 pix = page.get_pixmap(dpi=300)
-#                 img_bytes = pix.tobytes("png")
-
-#                 try:
-#                     page_text = extract_from_image_bytes(
-#                         image_bytes=img_bytes,
-#                         mime_type="image/png",
-#                         context=f"This is page {page_num} of {total_pages} of a scanned document."
-#                     )
-
-#                     # Label each page clearly
-#                     full_text += f"--- PAGE {page_num} ---\n{page_text}\n\n"
-
-#                 except Exception as page_err:
-#                     full_text += f"--- PAGE {page_num} ---\n[ERROR extracting this page: {page_err}]\n\n"
-
-#             doc.close()
-
-#         else:
-#             # Single image file
-#             mime_type = get_mime_type(file_path)
-#             print(f"🖼️ Processing image ({mime_type})...")
-
-#             with open(file_path, "rb") as f:
-#                 image_bytes = f.read()
-
-#             full_text = extract_from_image_bytes(
-#                 image_bytes=image_bytes,
-#                 mime_type=mime_type
-#             )
-
-#     except Exception as e:
-#         raise Exception(f"OCR Extraction Failed: {str(e)}")
-
-#     return full_text
-
-
-# # ---- Quick test ----
-# if __name__ == "__main__":
-#     import sys
-#     if len(sys.argv) < 2:
-#         print("Usage: python ocr.py <path_to_file>")
-#     else:
-#         result = extract_handwritten_text(sys.argv[1])
-#         print("\n===== EXTRACTED TEXT =====\n")
-#         print(result)
-
-
-# new
-
-# ocr.py
-
 import os
 import time
 import json
@@ -254,60 +42,28 @@ def _get_image_mime(file_path: str) -> str:
 
 def extract_handwritten_text(file_path: str) -> str:
     """
-    Upload entire PDF/image once to Gemini and extract all text.
-    Returns raw extracted text (preserving structure).
-    Used for QUESTION PAPERS.
+    Extract all text from a question paper PDF/image.
+    Returns plain text preserving structure.
     """
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"File not found: {file_path}")
 
     uploaded = upload_file_to_gemini(file_path)
-    prompt = """You are an expert OCR assistant analyzing a student's handwritten answer sheet.
 
-Extract each answer and group by question number. Follow these rules strictly:
+    prompt = """You are an expert OCR assistant.
 
-━━━ TEXT ━━━
-- Extract handwritten text EXACTLY as written — do NOT paraphrase or correct.
-- Preserve sub-parts (a, b, c) within each question.
-- If an answer spans multiple pages, combine into ONE complete answer.
+Extract ALL text from this document EXACTLY as written.
+- Preserve question numbers, sub-parts (a, b, c), and formatting.
+- Keep all printed AND handwritten text.
 - If text is unclear, write [unclear].
-
-━━━ TABLES ━━━
-- If a student has drawn or written a table, render it in Markdown format.
-- Wrap each table like:
-  [TABLE_START]
-  | Col1 | Col2 |
-  |------|------|
-  | val  | val  |
-  [TABLE_END]
-
-━━━ DIAGRAMS ━━━
-- If a student has drawn a diagram, describe it structurally inside:
-  [DIAGRAM_START]
-  Type: <Flowchart / Circuit / Block Diagram / Graph / Tree / Other>
-  Components: <all labeled parts, nodes, symbols>
-  Connections/Flow: <how they connect or relate>
-  Labels: <all text labels or values in the diagram>
-  Overall Meaning: <one-sentence summary of what it represents>
-  [DIAGRAM_END]
-
-━━━ OUTPUT FORMAT ━━━
-Return ONLY a valid JSON object. Keys are question numbers (Q1, Q2, etc.).
-Values are strings containing the full answer (text + embedded [TABLE_START]...[TABLE_END] and [DIAGRAM_START]...[DIAGRAM_END] blocks as needed).
-
-Example:
-{
-  "Q1": "The process is as follows:\\n[DIAGRAM_START]\\nType: Flowchart\\nComponents: Start, Process A, Decision, End\\nConnections/Flow: Start -> Process A -> Decision -> End\\nLabels: Yes/No on decision\\nOverall Meaning: Represents a basic decision-making flow\\n[DIAGRAM_END]",
-  "Q2": "The truth table is:\\n[TABLE_START]\\n| A | B | Output |\\n|---|---|--------|\\n| 0 | 0 | 0      |\\n[TABLE_END]",
-  "Q3": "Newton's second law states force equals mass times acceleration."
-}
-
-- No markdown code fences, no extra explanation outside the JSON.
-- Only raw JSON.
+- Do NOT summarize, skip, or paraphrase anything.
+- Maintain original structure and line breaks.
+- For any tables, reproduce them in markdown table format.
+- For any diagrams/figures, write [DIAGRAM: <one-line description>] as a placeholder.
 """
+
     response = model.generate_content([prompt, uploaded])
 
-    # Clean up uploaded file
     try:
         genai.delete_file(uploaded.name)
     except Exception:
@@ -315,7 +71,18 @@ Example:
 
     return response.text.strip()
 
+
 def extract_answers_by_question(file_path: str) -> dict:
+    """
+    Extract student answers grouped by question number.
+
+    Returns the SAME shape as the original code:
+        { "Q1": "plain string answer", "Q2": "plain string answer", ... }
+
+    Diagrams are described inline as [DIAGRAM: ...] within the string.
+    Tables are reproduced inline in markdown format within the string.
+    This means your frontend and grader need NO changes at all.
+    """
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"File not found: {file_path}")
 
@@ -331,15 +98,45 @@ Your task:
 5. Extract EXACT handwritten text — do NOT summarize or paraphrase.
 6. If text is unclear, write [unclear].
 
-Return ONLY a valid JSON object like:
-{
-  "Q1": "full answer for question 1...",
-  "Q2": "full answer for question 2...",
-  "Q3": "full answer for question 3..."
-}
+IMPORTANT — Handle diagrams and tables inside the answer text:
 
-- No markdown, no code fences, no extra explanation.
-- Only raw JSON.
+TABLES (very important — read carefully):
+- If the student has drawn a table (a grid with rows and columns):
+  - You MUST reproduce the ENTIRE table — every row, every column, every cell value.
+  - Do NOT stop after the header row.
+  - Do NOT skip rows or truncate the table.
+  - Use markdown table format inline at the exact position the table appears.
+  - Every row the student wrote must appear as a separate row in the markdown table.
+  - Example of a COMPLETE table (all rows included):
+    | Feature      | File System                        | DBMS                          |
+    |--------------|-------------------------------------|-------------------------------|
+    | Structure    | Data stored in files               | Data stored in database       |
+    | Backup       | No backup possible                 | Backup is possible            |
+    | Query        | No queries can be solved           | Queries can be solved         |
+    | Security     | Less security                      | Very tight security           |
+
+DIAGRAMS:
+- If the student has drawn a diagram, ER diagram, flowchart, architecture diagram, circuit, or any figure:
+  - Do NOT skip it.
+  - Insert it inline at the exact position it appears in the answer.
+  - Format: [DIAGRAM: <detailed description>]
+  - The description MUST include:
+    * Type of diagram (e.g., ER diagram, flowchart, block diagram)
+    * ALL entity/node names visible
+    * ALL relationship names and their cardinality (1:M, M:M etc.) if present
+    * ALL attribute names connected to each entity
+    * Direction of arrows or connections
+    * Any labels on connecting lines
+  - Example: [DIAGRAM: ER diagram for banking. Entities: Branch (attrs: branch_id, branch_name), AccountHolder (attrs: address, holder_name, phone_number, email, hdfc_number, account_number), Loan (attrs: loan_id, account_number), Deposit (attrs: deposit_id, account_number). Relationships: Branch 'has' AccountHolder (1:M), AccountHolder 'has' Loan (1:M), AccountHolder 'has' Deposit (1:M). All connected with diamond shapes. Arrows point from entity to attributes.]
+
+Return ONLY a valid JSON object. No markdown, no code fences, no explanation.
+
+Format — values must be plain strings (NOT nested objects):
+{
+  "Q1": "full answer text for Q1, with complete tables and [DIAGRAM: ...] inline",
+  "Q2": "full answer text for Q2...",
+  "Q3": "answer text...\n\n[DIAGRAM: detailed ER diagram description...]\n\nMore text if any."
+}
 """
 
     response = model.generate_content([prompt, uploaded])
@@ -349,7 +146,6 @@ Return ONLY a valid JSON object like:
     except Exception:
         pass
 
-    # ✅ Print raw response for debugging
     raw = response.text.strip()
     print("\n===== RAW GEMINI RESPONSE (answer sheet) =====\n", raw)
 
@@ -361,7 +157,35 @@ Return ONLY a valid JSON object like:
         raw = raw.strip()
 
     try:
-        return json.loads(raw)
+        parsed = json.loads(raw)
+
+        # Safety net: if Gemini still returns nested objects despite instructions,
+        # flatten them into a plain string so the rest of your app is unaffected
+        for qnum, content in parsed.items():
+            if isinstance(content, dict):
+                parts = []
+                if content.get("text"):
+                    parts.append(content["text"])
+                for i, table in enumerate(content.get("tables", []), start=1):
+                    parts.append(f"\n[TABLE {i}]\n{table}")
+                for i, diagram in enumerate(content.get("diagrams", []), start=1):
+                    parts.append(f"\n[DIAGRAM {i}: {diagram}]")
+                parsed[qnum] = "\n".join(parts).strip()
+
+        return parsed
+
     except json.JSONDecodeError as e:
         print("⚠️ JSON parse failed:", e)
-        return {"raw": raw}  # fallback: return as plain text
+        return {"raw": raw}
+
+
+# ---- Quick test ----
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) < 2:
+        print("Usage: python ocr.py <path_to_file>")
+    else:
+        result = extract_answers_by_question(sys.argv[1])
+        print("\n===== EXTRACTED ANSWERS =====\n")
+        for q, ans in result.items():
+            print(f"\n--- {q} ---\n{ans}")
