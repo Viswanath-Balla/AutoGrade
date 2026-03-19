@@ -51,15 +51,16 @@ def extract_handwritten_text(file_path: str) -> str:
     uploaded = upload_file_to_gemini(file_path)
 
     prompt = """You are an expert OCR assistant.
+This document may be a question paper from ANY subject — engineering, science, mathematics, arts, etc.
 
 Extract ALL text from this document EXACTLY as written.
-- Preserve question numbers, sub-parts (a, b, c), and formatting.
+- Preserve question numbers, sub-parts (a, b, c), marks allocation, and formatting.
 - Keep all printed AND handwritten text.
 - If text is unclear, write [unclear].
 - Do NOT summarize, skip, or paraphrase anything.
 - Maintain original structure and line breaks.
-- For any tables, reproduce them in markdown table format.
-- For any diagrams/figures, write [DIAGRAM: <one-line description>] as a placeholder.
+- For any tables or grids, reproduce them fully in markdown table format (all rows and columns).
+- For any diagrams, figures, graphs, or illustrations, write [DIAGRAM: <description of what is shown>].
 """
 
     response = model.generate_content([prompt, uploaded])
@@ -89,6 +90,7 @@ def extract_answers_by_question(file_path: str) -> dict:
     uploaded = upload_file_to_gemini(file_path)
 
     prompt = """You are an expert OCR assistant analyzing a student's handwritten answer sheet.
+This answer sheet may be from ANY subject — engineering, science, mathematics, arts, etc.
 
 Your task:
 1. Extract each answer written by the student.
@@ -101,33 +103,42 @@ Your task:
 IMPORTANT — Handle diagrams and tables inside the answer text:
 
 TABLES (very important — read carefully):
-- If the student has drawn a table (a grid with rows and columns):
+- If the student has drawn a table (a grid with rows and columns) for ANY subject:
   - You MUST reproduce the ENTIRE table — every row, every column, every cell value.
   - Do NOT stop after the header row.
   - Do NOT skip rows or truncate the table.
   - Use markdown table format inline at the exact position the table appears.
   - Every row the student wrote must appear as a separate row in the markdown table.
-  - Example of a COMPLETE table (all rows included):
-    | Feature      | File System                        | DBMS                          |
-    |--------------|-------------------------------------|-------------------------------|
-    | Structure    | Data stored in files               | Data stored in database       |
-    | Backup       | No backup possible                 | Backup is possible            |
-    | Query        | No queries can be solved           | Queries can be solved         |
-    | Security     | Less security                      | Very tight security           |
+  - This applies to ALL types of tables: comparison tables, truth tables, data tables,
+    frequency tables, periodic tables, schedule tables, any kind of grid the student drew.
+  - Example of a COMPLETE table (all rows must be included):
+    | Feature    | Option A              | Option B              |
+    |------------|-----------------------|-----------------------|
+    | Row 1      | value                 | value                 |
+    | Row 2      | value                 | value                 |
+    | Row 3      | value                 | value                 |
 
 DIAGRAMS:
-- If the student has drawn a diagram, ER diagram, flowchart, architecture diagram, circuit, or any figure:
+- If the student has drawn ANY kind of diagram, figure, or visual for ANY subject:
   - Do NOT skip it.
   - Insert it inline at the exact position it appears in the answer.
   - Format: [DIAGRAM: <detailed description>]
   - The description MUST include:
-    * Type of diagram (e.g., ER diagram, flowchart, block diagram)
-    * ALL entity/node names visible
-    * ALL relationship names and their cardinality (1:M, M:M etc.) if present
-    * ALL attribute names connected to each entity
-    * Direction of arrows or connections
-    * Any labels on connecting lines
-  - Example: [DIAGRAM: ER diagram for banking. Entities: Branch (attrs: branch_id, branch_name), AccountHolder (attrs: address, holder_name, phone_number, email, hdfc_number, account_number), Loan (attrs: loan_id, account_number), Deposit (attrs: deposit_id, account_number). Relationships: Branch 'has' AccountHolder (1:M), AccountHolder 'has' Loan (1:M), AccountHolder 'has' Deposit (1:M). All connected with diamond shapes. Arrows point from entity to attributes.]
+    * Type of diagram — examples by subject:
+        - CS/IT: flowchart, ER diagram, UML diagram, network topology, architecture diagram, state machine
+        - Electronics/ECE: circuit diagram, logic gate diagram, waveform, block diagram
+        - Mechanical: free body diagram, stress-strain graph, machine part sketch
+        - Civil: structural diagram, load diagram, cross-section sketch
+        - Physics: ray diagram, force diagram, wave diagram, experimental setup
+        - Chemistry: molecular structure, reaction mechanism, apparatus diagram, graph
+        - Maths: graph/plot, geometric figure, Venn diagram, number line
+        - Biology: cell diagram, organ diagram, life cycle diagram, food chain
+        - Any other subject: describe what you see accurately
+    * ALL labels, values, units, and text written inside or near the diagram
+    * ALL shapes used and what they represent
+    * Direction of arrows, connections, or flow
+    * Any equations, variables, or numbers written on or near the diagram
+  - Be as detailed as possible so a grader can evaluate the diagram from your description alone.
 
 Return ONLY a valid JSON object. No markdown, no code fences, no explanation.
 
@@ -135,7 +146,7 @@ Format — values must be plain strings (NOT nested objects):
 {
   "Q1": "full answer text for Q1, with complete tables and [DIAGRAM: ...] inline",
   "Q2": "full answer text for Q2...",
-  "Q3": "answer text...\n\n[DIAGRAM: detailed ER diagram description...]\n\nMore text if any."
+  "Q3": "answer text...\n\n[DIAGRAM: detailed description of whatever diagram the student drew...]\n\nMore text if any."
 }
 """
 
