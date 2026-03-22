@@ -40,10 +40,10 @@ def _get_image_mime(file_path: str) -> str:
     }.get(ext, "image/png")
 
 
-def extract_handwritten_text(file_path: str) -> str:
+def extract_handwritten_text(file_path: str) -> dict:
     """
     Extract all text from a question paper PDF/image.
-    Returns plain text preserving structure.
+    Returns a dictionary mapping question numbers to their text.
     """
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"File not found: {file_path}")
@@ -53,14 +53,26 @@ def extract_handwritten_text(file_path: str) -> str:
     prompt = """You are an expert OCR assistant.
 This document may be a question paper from ANY subject — engineering, science, mathematics, arts, etc.
 
-Extract ALL text from this document EXACTLY as written.
-- Preserve question numbers, sub-parts (a, b, c), marks allocation, and formatting.
-- Keep all printed AND handwritten text.
-- If text is unclear, write [unclear].
-- Do NOT summarize, skip, or paraphrase anything.
-- Maintain original structure and line breaks.
-- For any tables or grids, reproduce them fully in markdown table format (all rows and columns).
+Your task:
+1. Extract ALL questions from this document EXACTLY as written.
+2. Group the text by question number (e.g., Q1, Q2, Q3).
+3. Preserve sub-parts (a, b, c), marks allocation, and formatting.
+4. Keep all printed AND handwritten text.
+5. If text is unclear, write [unclear].
+6. Do NOT summarize, skip, or paraphrase anything.
+
+TABLES and DIAGRAMS:
+- For any tables or grids, reproduce them fully in markdown table format.
 - For any diagrams, figures, graphs, or illustrations, write [DIAGRAM: <description of what is shown>].
+
+Return ONLY a valid JSON object. No markdown, no code fences, no explanation.
+
+Format — values must be plain strings (NOT nested objects):
+{
+  "General Instructions": "Any instructions at the top...",
+  "Q1": "full text for Q1...",
+  "Q2": "full text for Q2..."
+}
 """
 
     response = model.generate_content([prompt, uploaded])
@@ -70,7 +82,21 @@ Extract ALL text from this document EXACTLY as written.
     except Exception:
         pass
 
-    return response.text.strip()
+    raw = response.text.strip()
+    print("\n===== RAW GEMINI RESPONSE (question paper) =====\n", raw)
+
+    # Strip markdown fences if Gemini adds them
+    if "```" in raw:
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+        raw = raw.strip()
+
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        print("⚠️ JSON parse failed for question paper:", e)
+        return {"raw": raw}
 
 
 def extract_answers_by_question(file_path: str) -> dict:
