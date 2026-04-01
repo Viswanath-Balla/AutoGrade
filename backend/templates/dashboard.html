@@ -222,6 +222,30 @@
             margin: 2.5rem 0;
             opacity: 0.5;
         }
+
+        /* Progress Bar Styles */
+        .progress-container {
+            width: 100%;
+            background-color: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            overflow: hidden;
+            margin-top: 1.5rem;
+            display: none;
+        }
+
+        .progress-bar {
+            height: 8px;
+            background-color: var(--primary);
+            width: 0%;
+            transition: width 0.4s ease;
+        }
+        
+        .progress-text {
+            font-size: 0.85rem;
+            margin-top: 0.5rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
     </style>
 </head>
 
@@ -252,9 +276,13 @@
                 <p style="color: var(--text-muted); margin-bottom: 1.5rem;">Select a question paper from your local
                     storage to upload:</p>
                 <form id="uploadForm" action="/upload-question-paper" method="POST" enctype="multipart/form-data">
-                    <input type="file" id="questionPaper" name="questionPaper">
-                    <button type="submit">Upload Paper</button>
+                    <input type="file" id="questionPaper" name="questionPaper" required>
+                    <button type="submit" id="uploadBtn">Upload Paper</button>
                 </form>
+                <div class="progress-container" id="progressContainer">
+                    <div class="progress-bar" id="progressBar"></div>
+                    <div class="progress-text" id="progressText">Initializing process...</div>
+                </div>
                 <p id="message"></p>
             </div>
         </div>
@@ -265,29 +293,81 @@
             window.location.href = "/logout";
         }
 
-        function uploadPaper() {
-            // Placeholder for upload logic
-            const fileInput = document.getElementById('questionPaper');
-            if (fileInput.files.length > 0) {
-                alert("File selected: " + fileInput.files[0].name);
-            } else {
-                alert("Please select a file.");
-            }
-        }
-
         document.getElementById("uploadForm").onsubmit = async function (e) {
-
             e.preventDefault();
 
-            const response = await fetch("/upload-question-paper", {
-                method: "POST",
-                body: new FormData(this)
-            });
+            const uploadBtn = document.getElementById("uploadBtn");
+            const messageEl = document.getElementById("message");
+            const progressContainer = document.getElementById("progressContainer");
+            const progressBar = document.getElementById("progressBar");
+            const progressText = document.getElementById("progressText");
 
-            const data = await response.json();
+            uploadBtn.disabled = true;
+            uploadBtn.innerText = "Processing...";
+            messageEl.innerText = "";
+            progressContainer.style.display = "block";
+            progressBar.style.width = "0%";
+            progressText.innerText = "Uploading file...";
 
-            document.getElementById("message").innerText =
-                response.ok ? data.message : data.detail;
+            try {
+                const response = await fetch("/upload-question-paper", {
+                    method: "POST",
+                    body: new FormData(this)
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.filename) {
+                    messageEl.innerText = data.message;
+                    messageEl.style.color = "var(--primary)";
+                    
+                    // Start polling
+                    const filename = data.filename;
+                    const interval = setInterval(async () => {
+                        try {
+                            const statusReq = await fetch(`/progress/question-paper/${filename}`);
+                            if (!statusReq.ok) return; 
+                            
+                            const statusData = await statusReq.json();
+                            
+                            progressBar.style.width = `${statusData.progress}%`;
+                            progressText.innerText = statusData.status || `Processing... ${statusData.progress}%`;
+                            
+                            if (statusData.progress >= 100) {
+                                progressText.innerText = statusData.status || "Completed successfully!";
+                                progressText.style.color = "#4ade80"; // green
+                                clearInterval(interval);
+                                uploadBtn.disabled = false;
+                                uploadBtn.innerText = "Upload Paper";
+                                document.getElementById("questionPaper").value = ""; 
+                            }
+                            else if (statusData.progress < 0) {
+                                progressBar.style.backgroundColor = "#ef4444"; // red
+                                progressText.innerText = statusData.status || "Processing failed.";
+                                progressText.style.color = "#ef4444"; // red
+                                clearInterval(interval);
+                                uploadBtn.disabled = false;
+                                uploadBtn.innerText = "Upload Paper";
+                            }
+                        } catch(err) {
+                            console.error("Polling error", err);
+                        }
+                    }, 1500); // Poll every 1.5 seconds
+                } else {
+                    // Fallback
+                    messageEl.innerText = data.message || data.detail || "Error occurred";
+                    messageEl.style.color = "#ef4444";
+                    uploadBtn.disabled = false;
+                    uploadBtn.innerText = "Upload Paper";
+                    progressContainer.style.display = 'none';
+                }
+            } catch (err) {
+                progressContainer.style.display = 'none';
+                messageEl.innerText = "Network error: " + err.message;
+                messageEl.style.color = "#ef4444";
+                uploadBtn.disabled = false;
+                uploadBtn.innerText = "Upload Paper";
+            }
         };
 
     </script>

@@ -1,0 +1,34 @@
+Here's a detailed analysis of the visual layout of the handwritten answer sheet:
+
+**1. Margins & Borders:**
+
+*   **Left Margin:** There is a clear, thick vertical line drawn down the left side of the page, serving as a left margin.
+*   **Right Margin:** There is no explicit vertical line drawn to define a right margin. The text extends to the right edge of the page in some sections, particularly within the table.
+*   **Top Margin:** There is a small gap at the top of the page before the first question number. No horizontal line is drawn to define a top margin.
+*   **Bottom Margin:** There is a significant amount of space at the bottom of the page, below the last entry in the table. No horizontal line is drawn to define a bottom margin.
+*   **Borders around the page:** There are no borders drawn around the entire page. However, a prominent rectangular grid (table) is drawn in the lower portion of the page, which has its own internal borders.
+
+**2. Question Numbering Placement:**
+
+*   The question number "Q1" is written **inside the left margin**, slightly to the right of the thick vertical line that defines the left margin. It is positioned horizontally to the left of the question text.
+
+**3. Numbering Format:**
+
+*   The question number is presented as "**Q1**".
+*   It is **not boxed, circled, or underlined**.
+*   It is followed by a period (".") and a space before the question text begins.
+
+**4. General Text Layout:**
+
+*   **Starting Answers:**
+    *   For the initial free-text questions ("The File System:", "The Data-Base Management System:"), the answers start **directly next to the question number** and the question text, on the same line or subsequent lines as the question prompt.
+    *   Within the table structure, the text for each cell starts **directly after the cell's label** (e.g., "Structure", "Data", "Backup", etc.) or the column header (e.g., "File System", "DBMS").
+*   **Separation of Answers/Sections:**
+    *   **Between Question 1 and subsequent sections:** A horizontal line is drawn after "The Data-Base Management System:", visually separating the initial text from the table that follows.
+    *   **Within the table:**
+        *   **Rows:** Each row is visually separated by horizontal lines.
+        *   **Columns:** The two main columns ("File System" and "DBMS") are separated by a thick vertical line.
+        *   **Individual entries within cells:** There is no explicit visual separation (like lines or boxes) between individual bullet points or sentences *within* a single cell, other than the natural spacing provided by line breaks and paragraphs. The diagonal lines drawn in the "Structure" and "Query" rows serve as visual connectors or dividers within the table structure, rather than separators for distinct textual answers.
+    *   **Whitespace:** Whitespace is used to separate lines of text within a paragraph or cell, and to create a visual gap between the question number and the start of the question text.
+
+In summary, the layout is characterized by a clear left margin, a defined table with internal grid lines, and text starting directly next to prompts. Separation is achieved through horizontal lines for rows and a vertical line for columns within the table, and a horizontal line after the initial free-text questions.

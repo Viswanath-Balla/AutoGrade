@@ -1,7 +1,10 @@
 import os
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.templating import Jinja2Templates
-from fastapi import UploadFile, File
+from fastapi import UploadFile, File, BackgroundTasks
+import traceback
+from vector_store import upsert_model_answers
+from gemini_service import generate_model_answers, extract_marks
 from typing import List
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
@@ -18,13 +21,49 @@ from fastapi import Form, File, UploadFile, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 import shutil
-import os,time
+import os, time, uuid
+from typing import Dict, Any
+
 from PIL import Image
 # import pytesseract
 import fitz  # PyMuPDF
 from models import QuestionPaper
 from db import get_db
 app = FastAPI()
+
+progress_tracker = {}
+
+@app.get("/progress/question-paper/{filename}")
+def get_progress(filename: str):
+    return progress_tracker.get(filename, {"status": "Not started", "progress": 0})
+
+def process_question_paper_task(filename: str, file_path: str, qp_id: int):
+    try:
+        progress_tracker[filename] = {"status": "Extracting text from document...", "progress": 10}
+        
+        # 1. Extract text
+        text = extract_handwritten_text(file_path)
+        
+        progress_tracker[filename] = {"status": "Structuring questions with Gemini...", "progress": 40}
+        
+        # 2. Structure questions
+        questions = structure_questions(text)
+        
+        progress_tracker[filename] = {"status": "Generating model answers...", "progress": 70}
+        
+        # 3. Generate answers and extract marks
+        model_answers = generate_model_answers(questions)
+        marks_map = {q_num: extract_marks(q_text) for q_num, q_text in questions.items()}
+        
+        progress_tracker[filename] = {"status": "Saving embeddings to Vector DB...", "progress": 90}
+        
+        # 4. Upsert vectors
+        upsert_model_answers(qp_id, model_answers, questions, marks_map)
+        
+        progress_tracker[filename] = {"status": "Completed successfully!", "progress": 100}
+    except Exception as e:
+        traceback.print_exc()
+        progress_tracker[filename] = {"status": f"Error: {str(e)}", "progress": -1}
 
 # pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
@@ -154,6 +193,7 @@ async def evaluate(
 @app.post("/upload-question-paper")
 def upload_question_paper(
     request: Request,
+    background_tasks: BackgroundTasks,
     questionPaper: UploadFile = File(...),
     user=Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -181,7 +221,10 @@ def upload_question_paper(
     db.commit()
     db.refresh(new_qp)
 
-    return {"message": "Uploaded successfully"}
+    progress_tracker[questionPaper.filename] = {"status": "Starting processing...", "progress": 5}
+    background_tasks.add_task(process_question_paper_task, questionPaper.filename, file_location, new_qp.qp_id)
+
+    return {"message": "Upload started", "filename": questionPaper.filename}
 
 from fastapi import Form
 from gemini_service import (
