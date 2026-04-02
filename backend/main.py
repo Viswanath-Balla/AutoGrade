@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 import shutil
 import os, time, uuid
 from typing import Dict, Any
-
+from vector_store import upsert_model_answers, has_embeddings, get_similarity
 from PIL import Image
 # import pytesseract
 import fitz  # PyMuPDF
@@ -279,7 +279,8 @@ async def evaluate(
             )
 
         # --- Extract question paper text ---
-        qp_text = extract_handwritten_text(question_paper.qp_path)
+        if not has_embeddings(paper_id):
+            qp_text = extract_handwritten_text(question_paper.qp_path)
 
         # --- Save uploaded answer sheet ---
         # Give unique name to avoid filename collisions
@@ -295,12 +296,45 @@ async def evaluate(
         # --- Extract answers grouped by question ---
         answers_by_question = extract_answers_by_question(answer_path)
 
-        print("\n===== QUESTION PAPER TEXT =====\n", qp_text)
         print("\n===== ANSWERS BY QUESTION =====\n", answers_by_question)
 
+        # --- Evaluate each answer using Pinecone vector similarity ---
+        results = []
+        total_score = 0.0
+
+        for question_number, student_answer in answers_by_question.items():
+            try:
+                similarity_data = get_similarity(paper_id, question_number, student_answer)
+
+                max_marks = similarity_data["max_marks"]
+                cosine_sim = similarity_data["cosine_similarity"]
+                awarded_marks = round(cosine_sim * max_marks, 2)
+                total_score += awarded_marks
+
+                results.append({
+                    "question_number": question_number,
+                    "question_text": similarity_data["question_text"],
+                    "student_answer": student_answer,
+                    "model_answer": similarity_data["model_answer"],
+                    "cosine_similarity_pct": similarity_data["cosine_similarity_pct"],
+                    "max_marks": max_marks,
+                    "awarded_marks": awarded_marks
+                })
+
+            except ValueError as ve:
+                # Question not found in Pinecone — skip and log
+                print(f"⚠️  Skipping {question_number}: {ve}")
+                results.append({
+                    "question_number": question_number,
+                    "student_answer": student_answer,
+                    "error": str(ve),
+                    "awarded_marks": 0
+                })
+            if(total_score < 0):
+                total_score = 0
         return {
-            "question_paper_text": qp_text,
-            "answers_by_question": answers_by_question
+            "total_score": round(total_score, 2),
+            "results": results
         }
 
     except Exception as e:
@@ -310,3 +344,17 @@ async def evaluate(
             status_code=500,
             content={"detail": str(e)}
         )
+
+
+
+# /*
+# 1. remove qp extraction from /evaluate
+# 2. keep answer sheets exatraction from /evaluate.
+# 3. convert the extracted answers into vector embeddings in /evaluate.
+# 4. fetch vector embeddings for corresponding question paper from vector db.
+# 5. compare extracted answers and fetched answers according to question number using cosine similarity and score each question.
+# 6. at last display total score for all questions in same /evaluate route
+
+# Doubts:
+# 1. what does cosine similarity give as output.
+# 2. Thresholds in scoring */

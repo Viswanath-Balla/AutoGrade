@@ -162,3 +162,11 @@ def delete_qp_vectors(qp_id: int):
     """Delete all vectors for a question paper (called when QP is deleted)."""
     index.delete(delete_all=True, namespace=str(qp_id))
     print(f"🗑️  Deleted all vectors for QP {qp_id}")
+
+# Checking if it has embeddings
+def has_embeddings(qp_id: int) -> bool:
+    """Returns True if vectors already exist in Pinecone for this QP."""
+    stats = index.describe_index_stats()
+    namespaces = stats.namespaces
+    ns_key = str(qp_id)
+    return ns_key in namespaces and namespaces[ns_key].vector_count > 0

@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, Text, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
 from db import Base
 from datetime import datetime
 
@@ -29,3 +30,18 @@ class AnswerSheet(Base):
     sheet_path = Column(String, nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class EvaluationResult(Base):
+    __tablename__ = "evaluation_results"
+
+    result_id    = Column(Integer, primary_key=True, index=True)
+    paper_id     = Column(Integer, ForeignKey("question_papers.qp_id"), nullable=False)
+    sheet_id     = Column(Integer, ForeignKey("answer_sheets.sheet_id"), nullable=False)  # ← link to AnswerSheet
+    total_score  = Column(Float, nullable=False)
+    max_score    = Column(Float, nullable=False)
+    breakdown    = Column(Text, nullable=False)   # JSON — {q_num: marks_awarded}
+    feedback     = Column(Text, nullable=True)    # JSON — {q_num: feedback text}
+    evaluated_at = Column(DateTime, default=datetime.utcnow)
+
+    question_paper = relationship("QuestionPaper", backref="results")
+    answer_sheet   = relationship("AnswerSheet", backref="results")
