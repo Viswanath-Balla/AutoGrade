@@ -82,6 +82,8 @@ Format — values must be plain strings (NOT nested objects):
     except Exception:
         pass
 
+    if not response.text:
+        raise ValueError("Gemini returned an empty response for the question paper. It may have been blocked by safety filters.")
     raw = response.text.strip()
     print("\n===== RAW GEMINI RESPONSE (question paper) =====\n", raw)
 
@@ -183,6 +185,8 @@ Format — values must be plain strings (NOT nested objects):
     except Exception:
         pass
 
+    if not response.text:
+        raise ValueError("Gemini returned an empty response for the answer sheet. It may have been blocked by safety filters.")
     raw = response.text.strip()
     print("\n===== RAW GEMINI RESPONSE (answer sheet) =====\n", raw)
 

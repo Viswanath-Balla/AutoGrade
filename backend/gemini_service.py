@@ -21,6 +21,8 @@ def _call(model: str, prompt: str, temperature: float = 0.2) -> str:
         contents=prompt,
         config=types.GenerateContentConfig(temperature=temperature)
     )
+    if not response.text:
+        raise ValueError("Gemini returned an empty response. It may have been blocked by safety filters.")
     return response.text.strip()
 
 

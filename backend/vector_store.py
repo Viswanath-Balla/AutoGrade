@@ -24,6 +24,8 @@ print("✅ Pinecone connected")
 
 def embed_text(text: str) -> list:
     """Convert text to 384-dim normalized embedding vector."""
+    if not text or not isinstance(text, str):
+        raise ValueError("Cannot embed empty or null text")
     return embedder.encode(text, normalize_embeddings=True).tolist()
 
 

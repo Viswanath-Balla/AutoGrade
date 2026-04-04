@@ -1,34 +1,22 @@
 import os
-from fastapi import FastAPI, Request, BackgroundTasks
-from fastapi.templating import Jinja2Templates
-from fastapi import UploadFile, File, BackgroundTasks
 import traceback
-from vector_store import upsert_model_answers
-from gemini_service import generate_model_answers, extract_marks
-from typing import List
+import shutil
+import time
+from fastapi import FastAPI, Request, BackgroundTasks, UploadFile, File, Form, Depends, HTTPException
+from fastapi.templating import Jinja2Templates
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi import Response, status
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from db import engine, Base, get_db
-from security import hash_password
-from models import User, QuestionPaper, AnswerSheet
+from security import hash_password, verify_password, create_access_token
+from models import User, QuestionPaper
 from schemas import UserCreate, UserLogin
-from fastapi import HTTPException, Depends
-from security import verify_password, create_access_token
 from dependencies import get_current_user
 from ocr import extract_handwritten_text, extract_answers_by_question
-from fastapi import Form, File, UploadFile, Depends
-from fastapi.responses import JSONResponse
-from sqlalchemy.orm import Session
-import shutil
-import os, time, uuid
-from typing import Dict, Any
 from vector_store import upsert_model_answers, has_embeddings, get_similarity
-from PIL import Image
-# import pytesseract
-import fitz  # PyMuPDF
-from models import QuestionPaper
-from db import get_db
+from gemini_service import generate_model_answers, extract_marks, structure_questions
 app = FastAPI()
 
 progress_tracker = {}
@@ -120,9 +108,6 @@ def register_user(
 async def login(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
-from fastapi import Response, status
-from fastapi.responses import RedirectResponse
-
 @app.post("/login")
 def login_user(
     response: Response,
@@ -177,8 +162,6 @@ async def evaluate(
     user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    ques_names = os.listdir(QUES_PATH)
-    # print(ques_names)
     # Fetch question papers for the logged-in user
     result = db.execute(
         select(QuestionPaper).where(QuestionPaper.user_id == user["id"])
@@ -192,7 +175,6 @@ async def evaluate(
 
 @app.post("/upload-question-paper")
 def upload_question_paper(
-    request: Request,
     background_tasks: BackgroundTasks,
     questionPaper: UploadFile = File(...),
     user=Depends(get_current_user),
@@ -226,36 +208,8 @@ def upload_question_paper(
 
     return {"message": "Upload started", "filename": questionPaper.filename}
 
-from fastapi import Form
-from gemini_service import (
-    structure_answers,
-    structure_questions,
-    evaluate_answers
-)
-from ocr import extract_handwritten_text
-from pypdf import PdfReader
-
-def extract_pdf_text(path: str):
-    reader = PdfReader(path)
-    text = ""
-    for page in reader.pages:
-        text += page.extract_text() + "\n"
-    return text
-
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-# main.py
-
-from ocr import extract_handwritten_text  # your ocr.py file from before
-
-def extract_text(file_path):
-    """
-    Drop-in replacement for the old Tesseract extract_text().
-    Now uses Gemini Vision for far better handwriting accuracy.
-    """
-    return extract_handwritten_text(file_path)
-
-
 
 @app.post("/evaluate")
 async def evaluate(
@@ -278,9 +232,12 @@ async def evaluate(
                 content={"detail": "Question paper not found"}
             )
 
-        # --- Extract question paper text ---
+        # --- Check embeddings exist ---
         if not has_embeddings(paper_id):
-            qp_text = extract_handwritten_text(question_paper.qp_path)
+            return JSONResponse(
+                status_code=400,
+                content={"detail": "Question paper has not been processed yet. Please wait for processing to complete before evaluating."}
+            )
 
         # --- Save uploaded answer sheet ---
         # Give unique name to avoid filename collisions
@@ -303,6 +260,16 @@ async def evaluate(
         total_score = 0.0
 
         for question_number, student_answer in answers_by_question.items():
+            if not student_answer or not isinstance(student_answer, str) or not student_answer.strip():
+                print(f"⚠️  Skipping {question_number}: empty or null answer from OCR")
+                results.append({
+                    "question_number": question_number,
+                    "student_answer": "",
+                    "error": "No answer detected for this question",
+                    "awarded_marks": 0
+                })
+                continue
+
             try:
                 similarity_data = get_similarity(paper_id, question_number, student_answer)
 
@@ -321,24 +288,23 @@ async def evaluate(
                     "awarded_marks": awarded_marks
                 })
 
-            except ValueError as ve:
-                # Question not found in Pinecone — skip and log
-                print(f"⚠️  Skipping {question_number}: {ve}")
+            except Exception as e:
+                print(f"⚠️  Skipping {question_number}: {e}")
                 results.append({
                     "question_number": question_number,
                     "student_answer": student_answer,
-                    "error": str(ve),
+                    "error": str(e),
                     "awarded_marks": 0
                 })
-            if(total_score < 0):
-                total_score = 0
+
+        if total_score < 0:
+            total_score = 0
         return {
             "total_score": round(total_score, 2),
             "results": results
         }
 
     except Exception as e:
-        import traceback
         traceback.print_exc()
         return JSONResponse(
             status_code=500,
