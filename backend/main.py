@@ -186,7 +186,7 @@ def upload_question_paper(
         buffer.write(questionPaper.file.read())
 
     result = db.execute(
-        select(QuestionPaper).where(QuestionPaper.qp_name == questionPaper.filename)
+        select(QuestionPaper).where(QuestionPaper.qp_name == questionPaper.filename and QuestionPaper.user_id == user["id"])
     )
     existing_sheet = result.scalar_one_or_none()
 
