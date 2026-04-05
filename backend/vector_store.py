@@ -11,13 +11,13 @@ load_dotenv()
 # ── MiniLM embedder — loaded once, cached for entire server session ────
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
 EMBEDDING_DIM = 384
-print("✅ MiniLM loaded")
+print("--> MiniLM loaded")
 
 # ── Pinecone client ────────────────────────────────────────────────────
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 INDEX_NAME = os.getenv("PINECONE_INDEX", "autograde")
 index = pc.Index(INDEX_NAME)
-print("✅ Pinecone connected")
+print("--> Pinecone connected")
 
 
 # ── Core utility ───────────────────────────────────────────────────────
@@ -59,7 +59,7 @@ def upsert_model_answers(
 
     for q_num, answer_text in model_answers.items():
         if not answer_text or not answer_text.strip():
-            print(f"⚠️  Skipping {q_num} — empty model answer")
+            print(f" Skipping {q_num} — empty model answer")
             continue
 
         embedding = embed_text(answer_text)
@@ -77,9 +77,9 @@ def upsert_model_answers(
 
     if vectors:
         index.upsert(vectors=vectors, namespace=str(qp_id))
-        print(f"✅ Upserted {len(vectors)} vectors for QP {qp_id}")
+        print(f"Upserted {len(vectors)} vectors for QP {qp_id}")
     else:
-        print("⚠️  No vectors to upsert")
+        print("No vectors to upsert")
 
 
 # ── Read ───────────────────────────────────────────────────────────────
@@ -163,7 +163,7 @@ def get_similarity(
 def delete_qp_vectors(qp_id: int):
     """Delete all vectors for a question paper (called when QP is deleted)."""
     index.delete(delete_all=True, namespace=str(qp_id))
-    print(f"🗑️  Deleted all vectors for QP {qp_id}")
+    print(f"Deleted all vectors for QP {qp_id}")
 
 # Checking if it has embeddings
 def has_embeddings(qp_id: int) -> bool:

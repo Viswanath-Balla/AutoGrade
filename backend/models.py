@@ -42,6 +42,6 @@ class EvaluationResult(Base):
     breakdown    = Column(Text, nullable=False)   # JSON — {q_num: marks_awarded}
     feedback     = Column(Text, nullable=True)    # JSON — {q_num: feedback text}
     evaluated_at = Column(DateTime, default=datetime.utcnow)
-
+    
     question_paper = relationship("QuestionPaper", backref="results")
     answer_sheet   = relationship("AnswerSheet", backref="results")

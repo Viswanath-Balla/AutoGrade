@@ -12,7 +12,7 @@ model = genai.GenerativeModel("gemini-2.5-flash-lite")
 
 def upload_file_to_gemini(file_path: str) -> genai.types.File:
     """Upload a file to Gemini Files API and wait until it's ready."""
-    print(f"⬆️ Uploading file: {file_path}")
+    print(f"Uploading file: {file_path}")
 
     mime_type = "application/pdf" if file_path.lower().endswith(".pdf") else _get_image_mime(file_path)
 
@@ -27,7 +27,7 @@ def upload_file_to_gemini(file_path: str) -> genai.types.File:
     if uploaded.state.name == "FAILED":
         raise Exception(f"File upload failed: {uploaded.name}")
 
-    print(f"  ✅ File ready: {uploaded.uri}")
+    print(f"File ready: {uploaded.uri}")
     return uploaded
 
 
@@ -97,7 +97,7 @@ Format — values must be plain strings (NOT nested objects):
     try:
         return json.loads(raw)
     except json.JSONDecodeError as e:
-        print("⚠️ JSON parse failed for question paper:", e)
+        print("JSON parse failed for question paper:", e)
         return {"raw": raw}
 
 
@@ -216,7 +216,7 @@ Format — values must be plain strings (NOT nested objects):
         return parsed
 
     except json.JSONDecodeError as e:
-        print("⚠️ JSON parse failed:", e)
+        print("JSON parse failed:", e)
         return {"raw": raw}
 
 

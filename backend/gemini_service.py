@@ -21,8 +21,6 @@ def _call(model: str, prompt: str, temperature: float = 0.2) -> str:
         contents=prompt,
         config=types.GenerateContentConfig(temperature=temperature)
     )
-    if not response.text:
-        raise ValueError("Gemini returned an empty response. It may have been blocked by safety filters.")
     return response.text.strip()
 
 
@@ -151,5 +149,5 @@ Values must be plain strings.
     try:
         return clean_json(raw)
     except json.JSONDecodeError as e:
-        print(f"⚠️ Model answer JSON parse failed: {e}")
+        print(f" Model answer JSON parse failed: {e}")
         return {}

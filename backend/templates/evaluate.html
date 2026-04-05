@@ -426,30 +426,30 @@ async function handleSubmit() {
     const files = document.getElementById("answerSheet").files;
 
     if (!paperId) {
-        message.textContent = "❌ Please select a question paper.";
+        message.textContent = " Please select a question paper.";
         return;
     }
     if (files.length === 0) {
-        message.textContent = "❌ Please upload at least one answer sheet.";
+        message.textContent = " Please upload at least one answer sheet.";
         return;
     }
 
     // Reset UI
     resultsContainer.innerHTML = "";
-    message.textContent = `⏳ Evaluating 0 of ${files.length} sheets...`;
+    message.textContent = ` Evaluating 0 of ${files.length} sheets...`;
     submitBtn.disabled = true;
     submitBtn.textContent = "Processing...";
 
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        message.textContent = `⏳ Evaluating ${i + 1} of ${files.length}: ${file.name}`;
+        message.textContent = ` Evaluating ${i + 1} of ${files.length}: ${file.name}`;
 
         // Build a placeholder card immediately so user sees progress
         const studentCard = document.createElement("div");
         studentCard.style.cssText = "border:1px solid #ccc; border-radius:10px; padding:16px; margin-bottom:20px;";
         studentCard.innerHTML = `
-            <h3 style="margin:0 0 8px 0;">📋 Student ${i + 1}: ${file.name}</h3>
-            <p id="status-${i}" style="color:#888;">⏳ Processing...</p>
+            <h3 style="margin:0 0 8px 0;"> Student ${i + 1}: ${file.name}</h3>
+            <p id="status-${i}" style="color:#888;"> Processing...</p>
             <div id="content-${i}"></div>
         `;
         resultsContainer.appendChild(studentCard);
@@ -469,18 +469,18 @@ async function handleSubmit() {
             const contentEl = document.getElementById(`content-${i}`);
 
             if (response.ok) {
-                statusEl.textContent = "✅ Evaluation Complete";
+                statusEl.textContent = " Evaluation Complete";
                 statusEl.style.color = "#06b6d4";
 
                 // --- Total Score Banner ---
                 const totalBanner = document.createElement("div");
                 totalBanner.style.cssText = "background:rgba(6,182,212,0.1);border:1px solid rgba(6,182,212,0.35);border-radius:12px;padding:1rem 1.25rem;margin:0.75rem 0 1rem 0;display:flex;align-items:center;gap:0.6rem;";
-                totalBanner.innerHTML = `<span style="font-size:1.4rem;">🎯</span><span style="font-size:1.1rem;font-weight:700;color:#06b6d4;">Total Score: ${data.total_score}</span>`;
+                totalBanner.innerHTML = `<span style="font-size:1.4rem;"></span><span style="font-size:1.1rem;font-weight:700;color:#06b6d4;">Total Score: ${data.total_score}</span>`;
                 contentEl.appendChild(totalBanner);
 
                 // --- Per-Question Cards ---
                 const answersHeader = document.createElement("h4");
-                answersHeader.textContent = "📋 Question-wise Breakdown";
+                answersHeader.textContent = " Question-wise Breakdown";
                 answersHeader.style.cssText = "margin:0.5rem 0 0.75rem 0;font-size:0.92rem;";
                 contentEl.appendChild(answersHeader);
 
@@ -520,17 +520,17 @@ async function handleSubmit() {
                 }
 
             } else {
-                statusEl.textContent = "❌ Error: " + data.detail;
+                statusEl.textContent = " Error: " + data.detail;
                 statusEl.style.color = "red";
             }
 
         } catch (err) {
-            document.getElementById(`status-${i}`).textContent = "❌ Network error: " + err.message;
+            document.getElementById(`status-${i}`).textContent = " Network error: " + err.message;
             document.getElementById(`status-${i}`).style.color = "red";
         }
     }
 
-    message.textContent = `✅ Finished evaluating ${files.length} sheet(s).`;
+    message.textContent = ` Finished evaluating ${files.length} sheet(s).`;
     submitBtn.disabled = false;
     submitBtn.textContent = "Start Evaluation";
 }

@@ -261,7 +261,7 @@ async def evaluate(
 
         for question_number, student_answer in answers_by_question.items():
             if not student_answer or not isinstance(student_answer, str) or not student_answer.strip():
-                print(f"⚠️  Skipping {question_number}: empty or null answer from OCR")
+                print(f"Skipping {question_number}: empty or null answer from OCR")
                 results.append({
                     "question_number": question_number,
                     "student_answer": "",
@@ -289,7 +289,7 @@ async def evaluate(
                 })
 
             except Exception as e:
-                print(f"⚠️  Skipping {question_number}: {e}")
+                print(f"Skipping {question_number}: {e}")
                 results.append({
                     "question_number": question_number,
                     "student_answer": student_answer,
@@ -320,7 +320,4 @@ async def evaluate(
 # 4. fetch vector embeddings for corresponding question paper from vector db.
 # 5. compare extracted answers and fetched answers according to question number using cosine similarity and score each question.
 # 6. at last display total score for all questions in same /evaluate route
-
-# Doubts:
-# 1. what does cosine similarity give as output.
-# 2. Thresholds in scoring */
+# */
