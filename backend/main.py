@@ -1,65 +1,71 @@
 import os
+import threading
 import traceback
 import shutil
 import time
+from io import BytesIO
+from typing import List, Optional
+import openpyxl
 from fastapi import FastAPI, Request, BackgroundTasks, UploadFile, File, Form, Depends, HTTPException
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, StreamingResponse
 from fastapi import Response, status
 from dotenv import load_dotenv
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from sqlalchemy import select
+from sqlalchemy import select, text
 from db import engine, Base, get_db
 from security import hash_password, verify_password, create_access_token
 from models import User, QuestionPaper
 from schemas import UserCreate, UserLogin
 from dependencies import get_current_user
 from ocr import extract_handwritten_text, extract_answers_by_question
-from vector_store import upsert_model_answers, has_embeddings, get_similarity
-from gemini_service import generate_model_answers, extract_marks, structure_questions
+from vector_store import upsert_model_answers, has_embeddings, get_similarity, delete_qp_vectors, get_embedding_status_bulk
+from gemini_service import generate_model_answers, extract_marks
 app = FastAPI()
 
-progress_tracker = {}
+progress_tracker: dict = {}
+_progress_lock = threading.Lock()
 
 @app.get("/progress/question-paper/{filename}")
 def get_progress(filename: str):
     return progress_tracker.get(filename, {"status": "Not started", "progress": 0})
 
+def _set_progress(filename: str, status: str, progress: int):
+    with _progress_lock:
+        progress_tracker[filename] = {"status": status, "progress": progress}
+
 def process_question_paper_task(filename: str, file_path: str, qp_id: int):
     try:
-        progress_tracker[filename] = {"status": "Extracting text from document...", "progress": 10}
-        
-        # 1. Extract text
-        text = extract_handwritten_text(file_path)
-        
-        progress_tracker[filename] = {"status": "Structuring questions with Gemini...", "progress": 40}
-        
-        # 2. Structure questions
-        questions = structure_questions(text)
-        
-        progress_tracker[filename] = {"status": "Generating model answers...", "progress": 70}
-        
-        # 3. Generate answers and extract marks
+        _set_progress(filename, "Extracting text from document...", 10)
+
+        # 1. Extract text — already returns a structured {Q1: text, ...} dict
+        questions = extract_handwritten_text(file_path)
+
+        _set_progress(filename, "Generating model answers...", 60)
+
+        # 2. Generate answers and extract marks
         model_answers = generate_model_answers(questions)
         marks_map = {q_num: extract_marks(q_text) for q_num, q_text in questions.items()}
-        
-        progress_tracker[filename] = {"status": "Saving embeddings to Vector DB...", "progress": 90}
-        
-        # 4. Upsert vectors
+
+        _set_progress(filename, "Saving embeddings to Vector DB...", 90)
+
+        # 3. Upsert vectors
         upsert_model_answers(qp_id, model_answers, questions, marks_map)
-        
-        progress_tracker[filename] = {"status": "Completed successfully!", "progress": 100}
+
+        _set_progress(filename, "Completed successfully!", 100)
     except Exception as e:
         traceback.print_exc()
-        progress_tracker[filename] = {"status": f"Error: {str(e)}", "progress": -1}
+        _set_progress(filename, f"Error: {str(e)}", -1)
 
 # pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 templates = Jinja2Templates(directory="templates")
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(BACKEND_DIR)
 
-env_path = os.path.join(BASE_DIR, "..", ".env")
+env_path = os.path.join(BASE_DIR, ".env")
 
 load_dotenv(env_path)
 
@@ -69,6 +75,14 @@ ANS_PATH = "answer_sheets"
 @app.on_event("startup")
 def startup():
     Base.metadata.create_all(bind=engine)
+    # Add qp_display_name column to existing tables that predate this migration
+    with engine.connect() as conn:
+        try:
+            conn.execute(text("ALTER TABLE question_papers ADD COLUMN qp_display_name VARCHAR(255) NULL"))
+            conn.commit()
+            print("Migration: added qp_display_name column")
+        except Exception:
+            pass  # Column already exists — safe to ignore
 
 @app.get("/")
 def read_root(request: Request):
@@ -177,24 +191,34 @@ async def evaluate(
 def upload_question_paper(
     background_tasks: BackgroundTasks,
     questionPaper: UploadFile = File(...),
+    display_name: str = Form(...),
     user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    result = db.execute(
+        select(QuestionPaper).where(
+            QuestionPaper.qp_name == questionPaper.filename,
+            QuestionPaper.user_id == user["id"]
+        )
+    )
+    existing_qp = result.scalar_one_or_none()
 
     file_location = f"{QUES_PATH}/{questionPaper.filename}"
     with open(file_location, "wb") as buffer:
         buffer.write(questionPaper.file.read())
 
-    result = db.execute(
-        select(QuestionPaper).where(QuestionPaper.qp_name == questionPaper.filename and QuestionPaper.user_id == user["id"])
-    )
-    existing_sheet = result.scalar_one_or_none()
-
-    if existing_sheet:
-        return {"message": "Question paper already exists"}
+    if existing_qp:
+        # Re-upload: update display name and reprocess
+        existing_qp.qp_display_name = display_name
+        db.commit()
+        qp_id = existing_qp.qp_id
+        _set_progress(questionPaper.filename, "Starting reprocessing...", 5)
+        background_tasks.add_task(process_question_paper_task, questionPaper.filename, file_location, qp_id)
+        return {"message": "Reprocessing started", "filename": questionPaper.filename}
 
     new_qp = QuestionPaper(
         qp_name=questionPaper.filename,
+        qp_display_name=display_name,
         qp_path=file_location,
         user_id=user["id"]
     )
@@ -203,7 +227,7 @@ def upload_question_paper(
     db.commit()
     db.refresh(new_qp)
 
-    progress_tracker[questionPaper.filename] = {"status": "Starting processing...", "progress": 5}
+    _set_progress(questionPaper.filename, "Starting processing...", 5)
     background_tasks.add_task(process_question_paper_task, questionPaper.filename, file_location, new_qp.qp_id)
 
     return {"message": "Upload started", "filename": questionPaper.filename}
@@ -215,6 +239,7 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 async def evaluate(
     paper_id: int = Form(...),
     answerSheet: UploadFile = File(...),
+    user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     try:
@@ -255,28 +280,46 @@ async def evaluate(
 
         print("\n===== ANSWERS BY QUESTION =====\n", answers_by_question)
 
+        # Pull out cover-page metadata (not question answers)
+        METADATA_KEYS = {"roll_number", "exam_name", "subject", "class_name", "date_of_exam"}
+        roll_number  = answers_by_question.get("roll_number", "")
+        exam_name    = answers_by_question.get("exam_name", "")
+        subject      = answers_by_question.get("subject", "")
+        class_name   = answers_by_question.get("class_name", "")
+        date_of_exam = answers_by_question.get("date_of_exam", "")
+
+        # Fixed marking scheme: 5 marks per question, 20 marks total
+        MARKS_PER_QUESTION = 5
+
         # --- Evaluate each answer using Pinecone vector similarity ---
         results = []
         total_score = 0.0
+        total_max_marks = 0.0
 
         for question_number, student_answer in answers_by_question.items():
+            if question_number in METADATA_KEYS:
+                continue
+
+            # Empty / undetected answer — 0 marks, no similarity API call
             if not student_answer or not isinstance(student_answer, str) or not student_answer.strip():
                 print(f"Skipping {question_number}: empty or null answer from OCR")
                 results.append({
                     "question_number": question_number,
                     "student_answer": "",
-                    "error": "No answer detected for this question",
-                    "awarded_marks": 0
+                    "max_marks": MARKS_PER_QUESTION,
+                    "awarded_marks": 0,
+                    "error": "No answer detected for this question"
                 })
+                total_max_marks += MARKS_PER_QUESTION
                 continue
 
             try:
                 similarity_data = get_similarity(paper_id, question_number, student_answer)
 
-                max_marks = similarity_data["max_marks"]
-                cosine_sim = similarity_data["cosine_similarity"]
-                awarded_marks = round(cosine_sim * max_marks, 2)
-                total_score += awarded_marks
+                cosine_sim    = similarity_data["cosine_similarity"]
+                awarded_marks = round(cosine_sim * MARKS_PER_QUESTION, 2)
+                total_score      += awarded_marks
+                total_max_marks  += MARKS_PER_QUESTION
 
                 results.append({
                     "question_number": question_number,
@@ -284,7 +327,7 @@ async def evaluate(
                     "student_answer": student_answer,
                     "model_answer": similarity_data["model_answer"],
                     "cosine_similarity_pct": similarity_data["cosine_similarity_pct"],
-                    "max_marks": max_marks,
+                    "max_marks": MARKS_PER_QUESTION,
                     "awarded_marks": awarded_marks
                 })
 
@@ -293,14 +336,20 @@ async def evaluate(
                 results.append({
                     "question_number": question_number,
                     "student_answer": student_answer,
-                    "error": str(e),
-                    "awarded_marks": 0
+                    "max_marks": MARKS_PER_QUESTION,
+                    "awarded_marks": 0,
+                    "error": "No model answer found"
                 })
+                total_max_marks += MARKS_PER_QUESTION
 
-        if total_score < 0:
-            total_score = 0
         return {
             "total_score": round(total_score, 2),
+            "max_marks": round(total_max_marks, 2),
+            "roll_number": roll_number,
+            "exam_name": exam_name,
+            "subject": subject,
+            "class_name": class_name,
+            "date_of_exam": date_of_exam,
             "results": results
         }
 
@@ -313,11 +362,172 @@ async def evaluate(
 
 
 
-# /*
-# 1. remove qp extraction from /evaluate
-# 2. keep answer sheets exatraction from /evaluate.
-# 3. convert the extracted answers into vector embeddings in /evaluate.
-# 4. fetch vector embeddings for corresponding question paper from vector db.
-# 5. compare extracted answers and fetched answers according to question number using cosine similarity and score each question.
-# 6. at last display total score for all questions in same /evaluate route
-# */
+# ── My Papers ─────────────────────────────────────────────────────────────────
+
+@app.get("/my-papers")
+async def my_papers(
+    request: Request,
+    user=Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    result = db.execute(
+        select(QuestionPaper).where(QuestionPaper.user_id == user["id"])
+    )
+    qps = result.scalars().all()
+
+    # Single Pinecone call for all papers
+    qp_ids = [qp.qp_id for qp in qps]
+    status_map = get_embedding_status_bulk(qp_ids) if qp_ids else {}
+
+    papers = [
+        {
+            "qp_id": qp.qp_id,
+            "display_name": qp.qp_display_name or qp.qp_name,
+            "qp_name": qp.qp_name,
+            "created_at": qp.created_at,
+            "vectors_ready": status_map.get(qp.qp_id, False),
+        }
+        for qp in qps
+    ]
+
+    return templates.TemplateResponse(
+        "my_papers.html",
+        {"request": request, "papers": papers, "username": user["username"]}
+    )
+
+
+# ── File serving ───────────────────────────────────────────────────────────────
+
+def _get_owned_qp(qp_id: int, user_id: int, db: Session) -> QuestionPaper:
+    result = db.execute(
+        select(QuestionPaper).where(
+            QuestionPaper.qp_id == qp_id,
+            QuestionPaper.user_id == user_id
+        )
+    )
+    qp = result.scalar_one_or_none()
+    if not qp:
+        raise HTTPException(status_code=404, detail="Question paper not found")
+    abs_path = os.path.join(BACKEND_DIR, qp.qp_path)
+    if not os.path.exists(abs_path):
+        raise HTTPException(status_code=404, detail="File not found on disk")
+    qp._abs_path = abs_path
+    return qp
+
+
+@app.get("/question-papers/view/{qp_id}")
+async def view_question_paper(
+    qp_id: int,
+    user=Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    qp = _get_owned_qp(qp_id, user["id"], db)
+    ext = os.path.splitext(qp.qp_path)[1].lower()
+    mime = "application/pdf" if ext == ".pdf" else f"image/{ext.lstrip('.')}"
+    return FileResponse(qp._abs_path, media_type=mime, headers={"Content-Disposition": "inline"})
+
+
+@app.get("/question-papers/download/{qp_id}")
+async def download_question_paper(
+    qp_id: int,
+    user=Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    qp = _get_owned_qp(qp_id, user["id"], db)
+    filename = os.path.basename(qp.qp_path)
+    return FileResponse(
+        qp._abs_path,
+        filename=filename,
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+# ── QP Deletion ────────────────────────────────────────────────────────────────
+
+@app.delete("/question-papers/{qp_id}")
+async def delete_question_paper(
+    qp_id: int,
+    user=Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    result = db.execute(
+        select(QuestionPaper).where(
+            QuestionPaper.qp_id == qp_id,
+            QuestionPaper.user_id == user["id"]
+        )
+    )
+    qp = result.scalar_one_or_none()
+    if not qp:
+        raise HTTPException(status_code=404, detail="Question paper not found")
+
+    abs_path = os.path.join(BACKEND_DIR, qp.qp_path)
+    if os.path.exists(abs_path):
+        os.remove(abs_path)
+
+    delete_qp_vectors(qp_id)
+
+    db.delete(qp)
+    db.commit()
+
+    return {"message": "Deleted successfully"}
+
+
+# ── XLSX Report Generation ─────────────────────────────────────────────────────
+
+class ReportEntry(BaseModel):
+    roll_number: str = ""
+    exam_name: str = ""
+    class_name: str = ""
+    subject: str = ""
+    date_of_exam: str = ""
+    total_score: float = 0.0
+    max_marks: float = 0.0
+
+
+@app.post("/generate-report")
+async def generate_report(
+    entries: List[ReportEntry],
+    user=Depends(get_current_user)
+):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Results"
+
+    # Header row
+    headers = ["H.T. No.", "Exam", "Branch", "Subject", "Date", "Score", "Max Marks", "Percentage"]
+    ws.append(headers)
+
+    # Style header
+    from openpyxl.styles import Font, PatternFill, Alignment
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="06B6D4", end_color="06B6D4", fill_type="solid")
+    for cell in ws[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center")
+
+    for e in entries:
+        pct = round((e.total_score / e.max_marks * 100), 2) if e.max_marks > 0 else 0.0
+        ws.append([e.roll_number, e.exam_name, e.class_name, e.subject, e.date_of_exam, e.total_score, e.max_marks, pct])
+
+    # Auto-fit column widths
+    for col in ws.columns:
+        max_len = max(len(str(cell.value or "")) for cell in col)
+        ws.column_dimensions[col[0].column_letter].width = max_len + 4
+
+    # File name based on first entry's class + subject
+    if entries:
+        safe = lambda s: "".join(c if c.isalnum() or c in "-_" else "_" for c in s)
+        fname = f"{safe(entries[0].class_name)}_{safe(entries[0].subject)}.xlsx"
+    else:
+        fname = "report.xlsx"
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={fname}"}
+    )

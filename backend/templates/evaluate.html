@@ -21,29 +21,74 @@
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    /* ── Animated background ── */
     body {
         font-family: 'Outfit', sans-serif;
         background: var(--bg);
         color: var(--text-main);
-        min-height: 100vh;
-        display: flex;
-        align-items: flex-start;
-        justify-content: center;
-        padding: 3rem 1.5rem;
-        position: relative;
-        overflow-x: hidden;
+        overflow: hidden;
     }
 
-    body::before {
-        content: '';
-        position: fixed;
-        inset: 0;
-        background:
-            radial-gradient(ellipse 80% 50% at 20% 10%, rgba(6,182,212,0.07) 0%, transparent 60%),
-            radial-gradient(ellipse 60% 40% at 80% 80%, rgba(99,102,241,0.06) 0%, transparent 55%);
-        pointer-events: none;
-        z-index: 0;
+    /* ── Sidebar layout ── */
+    .layout { display: flex; height: 100vh; }
+
+    .sidebar {
+        width: 250px;
+        background: rgba(15, 23, 42, 0.85);
+        padding: 2.25rem 1.25rem;
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        backdrop-filter: blur(25px);
+        flex-shrink: 0;
+    }
+
+    .sidebar h3 {
+        font-size: 0.65rem;
+        text-transform: uppercase;
+        letter-spacing: 0.2em;
+        color: var(--primary);
+        margin-bottom: 2rem;
+        padding-left: 0.75rem;
+        opacity: 0.6;
+    }
+
+    .sidebar ul { list-style: none; padding: 0; margin: 0; }
+    .sidebar li { margin-bottom: 0.6rem; }
+
+    .sidebar a {
+        text-decoration: none;
+        color: var(--text-muted);
+        display: flex;
+        align-items: center;
+        padding: 0.75rem 1.25rem;
+        border-radius: 12px;
+        font-weight: 500;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        border: 1px solid transparent;
+        font-size: 0.9rem;
+    }
+
+    .sidebar a:hover {
+        color: var(--primary);
+        background-color: rgba(6, 182, 212, 0.04);
+        border-color: rgba(6, 182, 212, 0.1);
+        transform: translateX(4px);
+    }
+
+    .sidebar a.active {
+        background-color: rgba(6, 182, 212, 0.08);
+        color: var(--primary);
+        border-color: rgba(6, 182, 212, 0.3);
+        box-shadow: 0 0 20px rgba(6, 182, 212, 0.1);
+    }
+
+    .main-content {
+        flex-grow: 1;
+        padding: 2.5rem 3rem;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
     }
 
     /* ── Page title ── */
@@ -385,7 +430,19 @@
     ::-webkit-scrollbar-thumb:hover { background: rgba(6,182,212,0.4); }
 </style>
 
-<div class="card">
+<div class="layout">
+    <div class="sidebar">
+        <h3>Menu</h3>
+        <ul>
+            <li><a href="/dashboard">Dashboard</a></li>
+            <li><a href="/my-papers">My Papers</a></li>
+            <li><a href="/evaluate" class="active">Evaluate</a></li>
+            <li><a href="/logout">Logout</a></li>
+        </ul>
+    </div>
+
+    <div class="main-content">
+    <div class="card">
     <div id="evaluateForm">
 
         <h3><span class="step-number">1</span> Select Question Paper</h3>
@@ -393,7 +450,7 @@
         <select id="questionPaperSelect" name="paper_id" required>
             <option value="">Select a Question Paper</option>
             {% for paper in question_papers %}
-            <option value="{{ paper.qp_id }}">{{ paper.qp_name }}</option>
+            <option value="{{ paper.qp_id }}">{{ paper.qp_display_name or paper.qp_name }}</option>
             {% endfor %}
         </select>
 
@@ -417,6 +474,8 @@
 </div>
 
 <script>
+let allReportEntries = [];
+
 async function handleSubmit() {
     const submitBtn = document.getElementById("submitBtn");
     const message = document.getElementById("message");
@@ -434,8 +493,12 @@ async function handleSubmit() {
         return;
     }
 
-    // Reset UI
+    // Reset session
+    allReportEntries = [];
     resultsContainer.innerHTML = "";
+    const reportBtn = document.getElementById("reportBtn");
+    if (reportBtn) reportBtn.remove();
+
     message.textContent = ` Evaluating 0 of ${files.length} sheets...`;
     submitBtn.disabled = true;
     submitBtn.textContent = "Processing...";
@@ -444,7 +507,6 @@ async function handleSubmit() {
         const file = files[i];
         message.textContent = ` Evaluating ${i + 1} of ${files.length}: ${file.name}`;
 
-        // Build a placeholder card immediately so user sees progress
         const studentCard = document.createElement("div");
         studentCard.style.cssText = "border:1px solid #ccc; border-radius:10px; padding:16px; margin-bottom:20px;";
         studentCard.innerHTML = `
@@ -459,11 +521,7 @@ async function handleSubmit() {
         formData.append("answerSheet", file);
 
         try {
-            const response = await fetch("/evaluate", {
-                method: "POST",
-                body: formData
-            });
-
+            const response = await fetch("/evaluate", { method: "POST", body: formData });
             const data = await response.json();
             const statusEl = document.getElementById(`status-${i}`);
             const contentEl = document.getElementById(`content-${i}`);
@@ -472,30 +530,47 @@ async function handleSubmit() {
                 statusEl.textContent = " Evaluation Complete";
                 statusEl.style.color = "#06b6d4";
 
-                // --- Total Score Banner ---
+                // Accumulate for report
+                allReportEntries.push({
+                    roll_number:  data.roll_number  || "",
+                    exam_name:    data.exam_name    || "",
+                    class_name:   data.class_name   || "",
+                    subject:      data.subject      || "",
+                    date_of_exam: data.date_of_exam || "",
+                    total_score:  data.total_score  || 0,
+                    max_marks:    data.max_marks     || 0
+                });
+
+                // Metadata bar
+                const metaBar = document.createElement("div");
+                metaBar.style.cssText = "background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:0.6rem 1rem;margin:0.5rem 0 0.75rem 0;font-size:0.82rem;color:#94a3b8;display:flex;gap:1.5rem;flex-wrap:wrap;";
+                metaBar.innerHTML = `
+                    <span><strong style="color:#e2e8f0;">H.T. No:</strong> ${escapeHtml(data.roll_number || "—")}</span>
+                    <span><strong style="color:#e2e8f0;">Exam:</strong> ${escapeHtml(data.exam_name || "—")}</span>
+                    <span><strong style="color:#e2e8f0;">Subject:</strong> ${escapeHtml(data.subject || "—")}</span>
+                    <span><strong style="color:#e2e8f0;">Branch:</strong> ${escapeHtml(data.class_name || "—")}</span>
+                    <span><strong style="color:#e2e8f0;">Date:</strong> ${escapeHtml(data.date_of_exam || "—")}</span>
+                `;
+                contentEl.appendChild(metaBar);
+
+                // Total Score Banner
                 const totalBanner = document.createElement("div");
-                totalBanner.style.cssText = "background:rgba(6,182,212,0.1);border:1px solid rgba(6,182,212,0.35);border-radius:12px;padding:1rem 1.25rem;margin:0.75rem 0 1rem 0;display:flex;align-items:center;gap:0.6rem;";
-                totalBanner.innerHTML = `<span style="font-size:1.4rem;"></span><span style="font-size:1.1rem;font-weight:700;color:#06b6d4;">Total Score: ${data.total_score}</span>`;
+                totalBanner.style.cssText = "background:rgba(6,182,212,0.1);border:1px solid rgba(6,182,212,0.35);border-radius:12px;padding:1rem 1.25rem;margin:0 0 1rem 0;display:flex;align-items:center;gap:0.6rem;";
+                totalBanner.innerHTML = `<span style="font-size:1.1rem;font-weight:700;color:#06b6d4;">Total Score: ${data.total_score} / ${data.max_marks}</span>`;
                 contentEl.appendChild(totalBanner);
 
-                // --- Per-Question Cards ---
-                const answersHeader = document.createElement("h4");
-                answersHeader.textContent = " Question-wise Breakdown";
-                answersHeader.style.cssText = "margin:0.5rem 0 0.75rem 0;font-size:0.92rem;";
-                contentEl.appendChild(answersHeader);
-
+                // Per-Question Cards
                 for (const result of data.results) {
                     const qCard = document.createElement("div");
-                    qCard.style.cssText = "border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:1rem 1.25rem;margin-bottom:0.75rem;background:rgba(15,23,42,0.5);transition:border-color 0.3s;";
+                    qCard.style.cssText = "border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:1rem 1.25rem;margin-bottom:0.75rem;background:rgba(15,23,42,0.5);";
 
                     if (result.error) {
-                        // Question not found in Pinecone
                         qCard.innerHTML = `
                             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
                                 <strong style="color:#06b6d4;">${result.question_number}</strong>
-                                <span style="color:#f87171;font-size:0.82rem;">⚠️ ${result.error}</span>
+                                <span style="color:#f87171;font-size:0.82rem;">⚠ ${result.error}</span>
                             </div>
-                            <p style="font-size:0.83rem;color:#94a3b8;margin:0;"><strong>Student Answer:</strong> ${escapeHtml(result.student_answer)}</p>
+                            <p style="font-size:0.83rem;color:#94a3b8;margin:0;"><strong>Student Answer:</strong> ${escapeHtml(result.student_answer || "")}</p>
                         `;
                     } else {
                         const pct = result.cosine_similarity_pct;
@@ -520,7 +595,7 @@ async function handleSubmit() {
                 }
 
             } else {
-                statusEl.textContent = " Error: " + data.detail;
+                statusEl.textContent = " Error: " + (data.detail || "Unknown error");
                 statusEl.style.color = "red";
             }
 
@@ -533,11 +608,54 @@ async function handleSubmit() {
     message.textContent = ` Finished evaluating ${files.length} sheet(s).`;
     submitBtn.disabled = false;
     submitBtn.textContent = "Start Evaluation";
+
+    // Show Download Report button if we have data
+    if (allReportEntries.length > 0) {
+        const btn = document.createElement("button");
+        btn.id = "reportBtn";
+        btn.type = "button";
+        btn.textContent = "Download Report (.xlsx)";
+        btn.style.cssText = "margin-top:1.5rem;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;padding:0.85rem 2rem;border-radius:12px;border:none;font-family:inherit;font-weight:700;font-size:0.88rem;cursor:pointer;letter-spacing:0.06em;text-transform:uppercase;";
+        btn.onclick = downloadReport;
+        document.querySelector(".card").appendChild(btn);
+    }
+}
+
+async function downloadReport() {
+    const btn = document.getElementById("reportBtn");
+    btn.textContent = "Generating...";
+    btn.disabled = true;
+    try {
+        const response = await fetch("/generate-report", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(allReportEntries)
+        });
+        if (!response.ok) {
+            alert("Failed to generate report");
+            return;
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "report.xlsx";
+        a.click();
+        URL.revokeObjectURL(url);
+    } catch (err) {
+        alert("Network error: " + err.message);
+    } finally {
+        btn.textContent = "Download Report (.xlsx)";
+        btn.disabled = false;
+    }
 }
 
 function escapeHtml(text) {
     const div = document.createElement("div");
-    div.appendChild(document.createTextNode(text));
+    div.appendChild(document.createTextNode(String(text)));
     return div.innerHTML;
 }
 </script>
+
+    </div><!-- /.main-content -->
+</div><!-- /.layout -->

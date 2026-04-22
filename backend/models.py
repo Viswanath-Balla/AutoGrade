@@ -17,7 +17,8 @@ class QuestionPaper(Base):
     __tablename__ = "question_papers"
 
     qp_id = Column(Integer, primary_key=True, index=True)
-    qp_name = Column(String, nullable=False)
+    qp_name = Column(String, nullable=False)          # actual filename on disk
+    qp_display_name = Column(String, nullable=True)   # user-chosen label shown in UI
     qp_path = Column(String, nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime, default=datetime.utcnow)

@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(myenv/Scripts/pip install:*)"
+    ]
+  }
+}

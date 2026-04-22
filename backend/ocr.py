@@ -87,12 +87,11 @@ Format — values must be plain strings (NOT nested objects):
     raw = response.text.strip()
     print("\n===== RAW GEMINI RESPONSE (question paper) =====\n", raw)
 
-    # Strip markdown fences if Gemini adds them
-    if "```" in raw:
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
+    # Extract outermost {...} — handles markdown fences and any preamble
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start != -1 and end != -1:
+        raw = raw[start:end + 1]
 
     try:
         return json.loads(raw)
@@ -117,64 +116,69 @@ def extract_answers_by_question(file_path: str) -> dict:
 
     uploaded = upload_file_to_gemini(file_path)
 
-    prompt = """You are an expert OCR assistant analyzing a student's handwritten answer sheet.
-This answer sheet may be from ANY subject — engineering, science, mathematics, arts, etc.
+    prompt = """You are an expert OCR assistant analyzing a student's handwritten answer booklet.
 
-Your task:
-1. Extract each answer written by the student.
-2. Group answers by their question number (e.g., Q1, Q2, Q3).
-3. If an answer spans multiple pages, combine it into ONE complete answer.
-4. Preserve sub-parts (a, b, c) within each question.
-5. Extract EXACT handwritten text — do NOT summarize or paraphrase.
-6. If text is unclear, write [unclear].
+════════════════════════════════════════
+STEP 1 — COVER PAGE METADATA EXTRACTION
+════════════════════════════════════════
+The cover page has printed labels with handwritten values filled in by the student.
+Extract each field exactly as described below. If a field is not visible or unreadable, use "".
 
-IMPORTANT — Handle diagrams and tables inside the answer text:
+H.T. No. (Hall Ticket Number):
+- It is printed in a row of exactly 10 individual boxes. The student writes one character per box.
+- Characters can be digits (0-9) OR letters (A-Z).
+- Example boxes might contain: 2 3 0 1 1 M 2 2 0 6  → extract as "23011M2206"
+- IMPORTANT: join ALL 10 characters together with NO spaces whatsoever.
+- Store as "roll_number".
 
-TABLES (very important — read carefully):
-- If the student has drawn a table (a grid with rows and columns) for ANY subject:
-  - You MUST reproduce the ENTIRE table — every row, every column, every cell value.
-  - Do NOT stop after the header row.
-  - Do NOT skip rows or truncate the table.
-  - Use markdown table format inline at the exact position the table appears.
-  - Every row the student wrote must appear as a separate row in the markdown table.
-  - This applies to ALL types of tables: comparison tables, truth tables, data tables,
-    frequency tables, periodic tables, schedule tables, any kind of grid the student drew.
-  - Example of a COMPLETE table (all rows must be included):
-    | Feature    | Option A              | Option B              |
-    |------------|-----------------------|-----------------------|
-    | Row 1      | value                 | value                 |
-    | Row 2      | value                 | value                 |
-    | Row 3      | value                 | value                 |
+NAME OF THE EXAMINATION:
+- The full exam name written by the student (e.g., "B.Tech II Year II Semester").
+- Store as "exam_name".
 
-DIAGRAMS:
-- If the student has drawn ANY kind of diagram, figure, or visual for ANY subject:
-  - Do NOT skip it.
-  - Insert it inline at the exact position it appears in the answer.
-  - Format: [DIAGRAM: <detailed description>]
-  - The description MUST include:
-    * Type of diagram — examples by subject:
-        - CS/IT: flowchart, ER diagram, UML diagram, network topology, architecture diagram, state machine
-        - Electronics/ECE: circuit diagram, logic gate diagram, waveform, block diagram
-        - Mechanical: free body diagram, stress-strain graph, machine part sketch
-        - Civil: structural diagram, load diagram, cross-section sketch
-        - Physics: ray diagram, force diagram, wave diagram, experimental setup
-        - Chemistry: molecular structure, reaction mechanism, apparatus diagram, graph
-        - Maths: graph/plot, geometric figure, Venn diagram, number line
-        - Biology: cell diagram, organ diagram, life cycle diagram, food chain
-        - Any other subject: describe what you see accurately
-    * ALL labels, values, units, and text written inside or near the diagram
-    * ALL shapes used and what they represent
-    * Direction of arrows, connections, or flow
-    * Any equations, variables, or numbers written on or near the diagram
-  - Be as detailed as possible so a grader can evaluate the diagram from your description alone.
+SUBJECT:
+- The subject name including any code in brackets (e.g., "Data-Base Management Systems [DBMS]").
+- Store as "subject".
 
-Return ONLY a valid JSON object. No markdown, no code fences, no explanation.
+BRANCH/SPECIALIZATION:
+- Branch, specialization, year, and semester info (e.g., "CSE-SE [IDDMP] [2nd Year 2nd Semester]").
+- Store as "class_name".
 
-Format — values must be plain strings (NOT nested objects):
+DATE OF EXAM:
+- The date written by the student (e.g., "22/04/2026").
+- Store as "date_of_exam".
+
+════════════════════════════════════════
+STEP 2 — ANSWER EXTRACTION
+════════════════════════════════════════
+Extract each answer the student has written:
+1. Group answers by question number (e.g., Q1, Q2, Q3, Q4).
+2. If an answer spans multiple pages, combine it into ONE complete string.
+3. Preserve sub-parts (a, b, c) within each question.
+4. Extract EXACT handwritten text — do NOT summarize or paraphrase.
+5. If text is unclear, write [unclear].
+6. If a question number is visible but NO answer is written under it, use "" (empty string).
+7. Do NOT invent question numbers that are not present in the booklet.
+
+TABLES — reproduce EVERY table fully in markdown format (all rows, all columns, never truncate).
+
+DIAGRAMS — insert inline: [DIAGRAM: <type, all labels, arrows, values, connections — enough detail for a grader to evaluate it without seeing the image>]
+
+════════════════════════════════════════
+OUTPUT FORMAT
+════════════════════════════════════════
+Return ONLY a valid JSON object. No markdown fences, no explanation, no preamble.
+All values must be plain strings (never nested objects or arrays).
+
 {
-  "Q1": "full answer text for Q1, with complete tables and [DIAGRAM: ...] inline",
-  "Q2": "full answer text for Q2...",
-  "Q3": "answer text...\n\n[DIAGRAM: detailed description of whatever diagram the student drew...]\n\nMore text if any."
+  "roll_number": "23011M2206",
+  "exam_name": "B.Tech II Year II Semester",
+  "subject": "Data-Base Management Systems [DBMS]",
+  "class_name": "CSE-SE [IDDMP] [2nd Year 2nd Semester]",
+  "date_of_exam": "22/04/2026",
+  "Q1": "full answer text...",
+  "Q2": "full answer text...",
+  "Q3": "",
+  "Q4": "full answer text..."
 }
 """
 
@@ -190,12 +194,11 @@ Format — values must be plain strings (NOT nested objects):
     raw = response.text.strip()
     print("\n===== RAW GEMINI RESPONSE (answer sheet) =====\n", raw)
 
-    # Strip markdown fences if Gemini adds them
-    if "```" in raw:
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
+    # Extract outermost {...} — handles markdown fences and any preamble
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start != -1 and end != -1:
+        raw = raw[start:end + 1]
 
     try:
         parsed = json.loads(raw)

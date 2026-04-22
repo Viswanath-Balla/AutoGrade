@@ -21,21 +21,19 @@ def _call(model: str, prompt: str, temperature: float = 0.2) -> str:
         contents=prompt,
         config=types.GenerateContentConfig(temperature=temperature)
     )
+    if not response.text:
+        raise ValueError("Gemini returned an empty response (possibly blocked by safety filters)")
     return response.text.strip()
 
 
 def clean_json(response_text: str) -> dict:
     text = response_text.strip()
-    if "```" in text:
-        text = text.split("```")[1]
-        if text.startswith("json"):
-            text = text[4:]
-        text = text.strip()
+    # Extract the outermost {...} — handles markdown fences and preamble text
     start = text.find("{")
     end = text.rfind("}")
-    if start != -1 and end != -1:
-        text = text[start:end + 1]
-    return json.loads(text)
+    if start == -1 or end == -1:
+        raise json.JSONDecodeError("No JSON object found in response", text, 0)
+    return json.loads(text[start:end + 1])
 
 
 def structure_answers(answer_text: str) -> dict:

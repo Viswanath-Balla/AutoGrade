@@ -165,10 +165,23 @@ def delete_qp_vectors(qp_id: int):
     index.delete(delete_all=True, namespace=str(qp_id))
     print(f"Deleted all vectors for QP {qp_id}")
 
-# Checking if it has embeddings
+
 def has_embeddings(qp_id: int) -> bool:
     """Returns True if vectors already exist in Pinecone for this QP."""
     stats = index.describe_index_stats()
     namespaces = stats.namespaces
     ns_key = str(qp_id)
     return ns_key in namespaces and namespaces[ns_key].vector_count > 0
+
+
+def get_embedding_status_bulk(qp_ids: list) -> dict:
+    """
+    Returns {qp_id: bool} for all given QP IDs in a single Pinecone API call.
+    More efficient than calling has_embeddings() per paper on list pages.
+    """
+    stats = index.describe_index_stats()
+    namespaces = stats.namespaces
+    return {
+        qp_id: (str(qp_id) in namespaces and namespaces[str(qp_id)].vector_count > 0)
+        for qp_id in qp_ids
+    }

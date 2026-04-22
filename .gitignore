@@ -109,3 +109,6 @@ temp/
 tmp/
 
 alembic/__pycache__/
+
+CLAUDE.md
+.claude/settings.local.json
