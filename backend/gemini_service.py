@@ -108,6 +108,22 @@ def extract_marks(question_text: str) -> int:
     return 5
 
 
+def _generate_single_answer(q_num: str, q_text: str) -> str:
+    """Generate a model answer for one question. Returns plain string or raises."""
+    prompt = f"""You are an expert academic answer generator.
+Write a complete and accurate model answer for the following exam question.
+Cover all key points a student needs to score full marks.
+Be thorough but concise.
+TABLES: Use column-value format: column_name: val1, val2, val3.
+DIAGRAMS: Describe as [DIAGRAM: detailed description].
+
+Question {q_num}: {q_text}
+
+Return ONLY the answer text as a plain string. No JSON, no markdown, no preamble.
+"""
+    return _call(PRO, prompt, temperature=0.2)
+
+
 def generate_model_answers(questions: dict) -> dict:
     filtered = {
         k: v for k, v in questions.items()
@@ -117,35 +133,13 @@ def generate_model_answers(questions: dict) -> dict:
     if not filtered:
         return {}
 
-    questions_text = "\n\n".join(
-        f"{q_num}: {q_text}"
-        for q_num, q_text in filtered.items()
-    )
+    results = {}
+    for q_num, q_text in filtered.items():
+        try:
+            answer = _generate_single_answer(q_num, q_text)
+            results[q_num] = answer
+            print(f"  Generated answer for {q_num} ({len(answer)} chars)")
+        except Exception as e:
+            print(f"  Failed to generate answer for {q_num}: {e}")
 
-    prompt = f"""You are an expert academic answer generator.
-For each question below, generate a complete and accurate model answer.
-Cover all key points a student needs to score full marks.
-Be thorough but concise.
-TABLES: Use column-value format:
-  column_name: val1, val2, val3.
-DIAGRAMS: Describe as [DIAGRAM: detailed description].
-
-Questions:
-{questions_text}
-
-Return ONLY a valid JSON object. No markdown. No code fences. No explanation.
-Keys must exactly match the question numbers given above.
-Values must be plain strings.
-{{
-  "Q1": "complete model answer...",
-  "Q2": "complete model answer..."
-}}
-"""
-    raw = _call(PRO, prompt, temperature=0.2)
-    print("\n===== RAW MODEL ANSWERS FROM GEMINI =====\n", raw[:500], "...")
-
-    try:
-        return clean_json(raw)
-    except json.JSONDecodeError as e:
-        print(f" Model answer JSON parse failed: {e}")
-        return {}
+    return results

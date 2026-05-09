@@ -22,6 +22,18 @@ from dependencies import get_current_user
 from ocr import extract_handwritten_text, extract_answers_by_question
 from vector_store import upsert_model_answers, has_embeddings, get_similarity, delete_qp_vectors, get_embedding_status_bulk
 from gemini_service import generate_model_answers, extract_marks
+from vector_store import fetch_model_answers as _fetch_model_answers
+
+MAX_QUESTIONS = 4       # student must attempt 4 out of 6
+MARKS_PER_QUESTION = 5  # each question is worth 5 marks
+MAX_TOTAL_MARKS = MAX_QUESTIONS * MARKS_PER_QUESTION  # 20
+
+
+def _round_half(x: float) -> float:
+    """Round to nearest 0.5 (e.g. 3.3 → 3.5, 3.7 → 4.0, 4.8 → 5.0)."""
+    return round(x * 2) / 2
+
+
 app = FastAPI()
 
 progress_tracker: dict = {}
@@ -203,18 +215,25 @@ def upload_question_paper(
     )
     existing_qp = result.scalar_one_or_none()
 
-    file_location = f"{QUES_PATH}/{questionPaper.filename}"
-    with open(file_location, "wb") as buffer:
-        buffer.write(questionPaper.file.read())
+    ext = os.path.splitext(questionPaper.filename)[1]
+    file_bytes = questionPaper.file.read()
 
     if existing_qp:
-        # Re-upload: update display name and reprocess
+        # Re-upload: overwrite the existing file at its stored path
+        file_location = existing_qp.qp_path
+        with open(file_location, "wb") as buffer:
+            buffer.write(file_bytes)
         existing_qp.qp_display_name = display_name
         db.commit()
-        qp_id = existing_qp.qp_id
         _set_progress(questionPaper.filename, "Starting reprocessing...", 5)
-        background_tasks.add_task(process_question_paper_task, questionPaper.filename, file_location, qp_id)
+        background_tasks.add_task(process_question_paper_task, questionPaper.filename, file_location, existing_qp.qp_id)
         return {"message": "Reprocessing started", "filename": questionPaper.filename}
+
+    # New upload — use a unique filename to avoid cross-user collisions
+    unique_filename = f"qp_{user['id']}_{int(time.time())}{ext}"
+    file_location = f"{QUES_PATH}/{unique_filename}"
+    with open(file_location, "wb") as buffer:
+        buffer.write(file_bytes)
 
     new_qp = QuestionPaper(
         qp_name=questionPaper.filename,
@@ -288,40 +307,24 @@ async def evaluate(
         class_name   = answers_by_question.get("class_name", "")
         date_of_exam = answers_by_question.get("date_of_exam", "")
 
-        # Fixed marking scheme: 5 marks per question, 20 marks total
-        MARKS_PER_QUESTION = 5
-
-        # --- Evaluate each answer using Pinecone vector similarity ---
-        results = []
-        total_score = 0.0
-        total_max_marks = 0.0
+        # --- Evaluate each answered question using Pinecone vector similarity ---
+        scored = []   # questions that were successfully graded
+        errors = []   # questions that failed (no model answer found)
 
         for question_number, student_answer in answers_by_question.items():
             if question_number in METADATA_KEYS:
                 continue
-
-            # Empty / undetected answer — 0 marks, no similarity API call
             if not student_answer or not isinstance(student_answer, str) or not student_answer.strip():
-                print(f"Skipping {question_number}: empty or null answer from OCR")
-                results.append({
-                    "question_number": question_number,
-                    "student_answer": "",
-                    "max_marks": MARKS_PER_QUESTION,
-                    "awarded_marks": 0,
-                    "error": "No answer detected for this question"
-                })
-                total_max_marks += MARKS_PER_QUESTION
+                print(f"Skipping {question_number}: empty answer from OCR")
                 continue
 
             try:
                 similarity_data = get_similarity(paper_id, question_number, student_answer)
 
                 cosine_sim    = similarity_data["cosine_similarity"]
-                awarded_marks = round(cosine_sim * MARKS_PER_QUESTION, 2)
-                total_score      += awarded_marks
-                total_max_marks  += MARKS_PER_QUESTION
+                awarded_marks = _round_half((cosine_sim**0.6) * MARKS_PER_QUESTION)
 
-                results.append({
+                scored.append({
                     "question_number": question_number,
                     "question_text": similarity_data["question_text"],
                     "student_answer": student_answer,
@@ -333,18 +336,26 @@ async def evaluate(
 
             except Exception as e:
                 print(f"Skipping {question_number}: {e}")
-                results.append({
+                errors.append({
                     "question_number": question_number,
                     "student_answer": student_answer,
                     "max_marks": MARKS_PER_QUESTION,
                     "awarded_marks": 0,
-                    "error": "No model answer found"
+                    "error": "No model answer found for this question"
                 })
-                total_max_marks += MARKS_PER_QUESTION
+
+        # --- Best-of-4 selection (6 questions, attempt any 4) ---
+        # Sort by awarded_marks descending and keep the top MAX_QUESTIONS
+        scored.sort(key=lambda r: r["awarded_marks"], reverse=True)
+        selected = scored[:MAX_QUESTIONS]
+
+        total_score = sum(r["awarded_marks"] for r in selected)
+        results     = selected + errors   # show selected answers then any errors
 
         return {
-            "total_score": round(total_score, 2),
-            "max_marks": round(total_max_marks, 2),
+            "total_score": _round_half(total_score),
+            "max_marks": MAX_TOTAL_MARKS,
+            "questions_counted": len(selected),
             "roll_number": roll_number,
             "exam_name": exam_name,
             "subject": subject,
@@ -450,26 +461,34 @@ async def delete_question_paper(
     user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    result = db.execute(
-        select(QuestionPaper).where(
-            QuestionPaper.qp_id == qp_id,
-            QuestionPaper.user_id == user["id"]
+    try:
+        result = db.execute(
+            select(QuestionPaper).where(
+                QuestionPaper.qp_id == qp_id,
+                QuestionPaper.user_id == user["id"]
+            )
         )
-    )
-    qp = result.scalar_one_or_none()
-    if not qp:
-        raise HTTPException(status_code=404, detail="Question paper not found")
+        qp = result.scalar_one_or_none()
+        if not qp:
+            return JSONResponse(status_code=404, content={"detail": "Question paper not found"})
 
-    abs_path = os.path.join(BACKEND_DIR, qp.qp_path)
-    if os.path.exists(abs_path):
-        os.remove(abs_path)
+        abs_path = os.path.join(BACKEND_DIR, qp.qp_path)
+        if os.path.exists(abs_path):
+            os.remove(abs_path)
 
-    delete_qp_vectors(qp_id)
+        try:
+            delete_qp_vectors(qp_id)
+        except Exception as e:
+            print(f"Pinecone delete failed for QP {qp_id}: {e}")
 
-    db.delete(qp)
-    db.commit()
+        db.delete(qp)
+        db.commit()
 
-    return {"message": "Deleted successfully"}
+        return JSONResponse(status_code=200, content={"message": "Deleted successfully"})
+
+    except Exception as e:
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"detail": str(e)})
 
 
 # ── XLSX Report Generation ─────────────────────────────────────────────────────

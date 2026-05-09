@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import json
 import google.generativeai as genai
@@ -116,7 +117,12 @@ def extract_answers_by_question(file_path: str) -> dict:
 
     uploaded = upload_file_to_gemini(file_path)
 
-    prompt = """You are an expert OCR assistant analyzing a student's handwritten answer booklet.
+    prompt = """You are an expert OCR assistant analyzing a JNTU student's handwritten answer booklet.
+
+EXAM CONTEXT:
+- This is a JNTU university exam. The question paper has 6 questions.
+- The student is required to answer ANY 4 out of 6 questions.
+- Each question is worth 5 marks. Maximum total = 20 marks.
 
 ════════════════════════════════════════
 STEP 1 — COVER PAGE METADATA EXTRACTION
@@ -150,14 +156,23 @@ DATE OF EXAM:
 ════════════════════════════════════════
 STEP 2 — ANSWER EXTRACTION
 ════════════════════════════════════════
-Extract each answer the student has written:
-1. Group answers by question number (e.g., Q1, Q2, Q3, Q4).
+CRITICAL — QUESTION NUMBER DETECTION:
+Students write question numbers in many formats. You MUST recognize ALL of these as question numbers:
+  "1."  "1)"  "Q1"  "Q.1"  "Q 1"  "Question 1"  "Ans 1"  "1"  "(1)"
+Always output the key as "Q1", "Q2", "Q3", "Q4", "Q5", or "Q6" — nothing else.
+════════════════════════════════════════════════════════════════════════════════
+IMPORTANT NOTE: Be especially very very careful distinguishing handwritten '4' from '6' — they look similar.
+
+RULES:
+1. Only include questions where the student has actually written an answer. Valid question numbers are Q1 through Q6 only.
 2. If an answer spans multiple pages, combine it into ONE complete string.
-3. Preserve sub-parts (a, b, c) within each question.
+3. Preserve sub-parts (a, b, c) within each question's answer text.
 4. Extract EXACT handwritten text — do NOT summarize or paraphrase.
 5. If text is unclear, write [unclear].
-6. If a question number is visible but NO answer is written under it, use "" (empty string).
-7. Do NOT invent question numbers that are not present in the booklet.
+6. Do NOT output a question key if no answer body is written under it (even if the number is visible).
+7. Do NOT invent or guess question numbers — only output numbers you can clearly see written by the student.
+8. Ignore any printed question paper text; extract ONLY the student's handwritten answers.
+9. Scan the ENTIRE document from first page to last page and extract ALL question numbers the student has written — do not stop early or skip any question.
 
 TABLES — reproduce EVERY table fully in markdown format (all rows, all columns, never truncate).
 
@@ -168,6 +183,7 @@ OUTPUT FORMAT
 ════════════════════════════════════════
 Return ONLY a valid JSON object. No markdown fences, no explanation, no preamble.
 All values must be plain strings (never nested objects or arrays).
+Keys for answers MUST be exactly "Q1", "Q2", "Q3", "Q4", "Q5", or "Q6".
 
 {
   "roll_number": "23011M2206",
@@ -176,9 +192,9 @@ All values must be plain strings (never nested objects or arrays).
   "class_name": "CSE-SE [IDDMP] [2nd Year 2nd Semester]",
   "date_of_exam": "22/04/2026",
   "Q1": "full answer text...",
-  "Q2": "full answer text...",
-  "Q3": "",
-  "Q4": "full answer text..."
+  "Q3": "full answer text...",
+  "Q4": "full answer text...",
+  "Q6": "full answer text..."
 }
 """
 
@@ -203,9 +219,8 @@ All values must be plain strings (never nested objects or arrays).
     try:
         parsed = json.loads(raw)
 
-        # Safety net: if Gemini still returns nested objects despite instructions,
-        # flatten them into a plain string so the rest of your app is unaffected
-        for qnum, content in parsed.items():
+        # Safety net: flatten any nested objects Gemini returns despite instructions
+        for qnum, content in list(parsed.items()):
             if isinstance(content, dict):
                 parts = []
                 if content.get("text"):
@@ -216,7 +231,21 @@ All values must be plain strings (never nested objects or arrays).
                     parts.append(f"\n[DIAGRAM {i}: {diagram}]")
                 parsed[qnum] = "\n".join(parts).strip()
 
-        return parsed
+        # Normalise question number keys to "Q1"…"Q6" regardless of how Gemini wrote them
+        METADATA_KEYS = {"roll_number", "exam_name", "subject", "class_name", "date_of_exam", "raw"}
+        normalised = {}
+        for key, value in parsed.items():
+            if key in METADATA_KEYS:
+                normalised[key] = value
+                continue
+            # Match any format: "1", "1.", "Q1", "Q.1", "Q 1", "Question 1", "Ans 1", "(1)" etc.
+            m = re.search(r'\b([1-6])\b', key)
+            if m:
+                normalised[f"Q{m.group(1)}"] = value
+            else:
+                normalised[key] = value  # keep unknown keys as-is
+
+        return normalised
 
     except json.JSONDecodeError as e:
         print("JSON parse failed:", e)

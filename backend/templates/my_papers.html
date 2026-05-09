@@ -313,7 +313,9 @@ async function deletePaper(qpId, displayName) {
 
     try {
         const response = await fetch(`/question-papers/${qpId}`, { method: "DELETE" });
-        const data = await response.json();
+
+        let data = {};
+        try { data = await response.json(); } catch (_) {}
 
         if (response.ok) {
             const row = document.getElementById(`row-${qpId}`);
@@ -323,10 +325,10 @@ async function deletePaper(qpId, displayName) {
                 setTimeout(() => row.remove(), 300);
             }
         } else {
-            alert("Delete failed: " + (data.detail || "Unknown error"));
+            alert("Delete failed: " + (data.detail || `Server error ${response.status}`));
         }
     } catch (err) {
-        alert("Network error: " + err.message);
+        alert("Delete failed: " + err.message);
     }
 }
 </script>
