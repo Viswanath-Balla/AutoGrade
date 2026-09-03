@@ -27,3 +27,75 @@ AutoGrade is a FastAPI backend that ingests scanned question papers and student 
 | Templating | Jinja2 |
 
 ## Project Structure
+
+    backend/
+    ├── main.py           # FastAPI app, routes
+    ├── models.py          # SQLAlchemy models (User, QuestionPaper, AnswerSheet)
+    ├── schemas.py          # Pydantic request/response schemas
+    ├── db.py              # Database engine and session setup
+    ├── security.py         # Password hashing, JWT creation/verification
+    ├── dependencies.py       # Auth dependency (get_current_user)
+    ├── ocr.py             # Gemini-based extraction pipeline
+    ├── gemini_service.py     # Scoring/evaluation logic
+    └── templates/          # Jinja2 HTML templates
+
+## Getting Started
+
+### Prerequisites
+
+- Python 3.10+
+- A TiDB (or MySQL-compatible) database instance
+- A Google Gemini API key
+
+### Installation
+
+    git clone https://github.com/Viswanath-Balla/AutoGrade.git
+    cd AutoGrade
+    pip install -r requirements.txt
+
+### Environment Variables
+
+Create a `.env` file in the project root:
+
+    DB_HOST=your-tidb-host
+    DB_PORT=4000
+    DB_USER=your-db-user
+    DB_PASSWORD=your-db-password
+    DB_NAME=autograde
+    DB_SSL_CA=path/to/ca-cert.pem   # optional
+
+    GEMINI_API_KEY=your-gemini-api-key
+
+    SECRET_KEY=your-jwt-secret
+    ALGORITHM=HS256
+    ACCESS_TOKEN_EXPIRE_MINUTES=60
+
+### Running
+
+    cd backend
+    uvicorn main:app --reload
+
+The app will be available at `http://localhost:8000`.
+
+## API Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET/POST | `/register` | Register a new user |
+| GET/POST | `/login` | Authenticate and receive a session cookie |
+| GET | `/logout` | Clear the session |
+| GET | `/dashboard` | User dashboard (auth required) |
+| GET | `/evaluate` | View uploaded question papers |
+| POST | `/upload-question-paper` | Upload a question paper (PDF/image) |
+| POST | `/evaluate` | Upload an answer sheet and extract structured Q&A against a question paper |
+
+## Roadmap
+
+- [ ] Wire the scoring module (`gemini_service.evaluate_answers`) into the `/evaluate` endpoint to return per-question marks and feedback, not just extracted text
+- [ ] Per-user file namespacing to avoid upload collisions
+- [ ] Exportable grade reports
+- [ ] Rate limiting on auth endpoints
+
+## License
+
+See [License](backend/License).
